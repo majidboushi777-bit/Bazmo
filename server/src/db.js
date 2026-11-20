@@ -359,14 +359,23 @@ async function initSchema() {
       id TEXT PRIMARY KEY,
       section TEXT NOT NULL,
       slot_index INTEGER NOT NULL,
+      province TEXT NOT NULL DEFAULT 'همه استان‌ها',
+      city TEXT NOT NULL DEFAULT 'همه شهرها',
+      region TEXT NOT NULL DEFAULT 'همه مناطق',
       title TEXT NOT NULL DEFAULT '',
       image_mime TEXT NOT NULL DEFAULT '',
       image_data TEXT NOT NULL DEFAULT '',
       link_type TEXT NOT NULL DEFAULT 'none',
       link_target TEXT NOT NULL DEFAULT '',
-      updated_at BIGINT NOT NULL DEFAULT 0,
-      UNIQUE(section, slot_index)
+      updated_at BIGINT NOT NULL DEFAULT 0
     );
+
+    ALTER TABLE banners ADD COLUMN IF NOT EXISTS province TEXT NOT NULL DEFAULT 'همه استان‌ها';
+    ALTER TABLE banners ADD COLUMN IF NOT EXISTS city TEXT NOT NULL DEFAULT 'همه شهرها';
+    ALTER TABLE banners ADD COLUMN IF NOT EXISTS region TEXT NOT NULL DEFAULT 'همه مناطق';
+    ALTER TABLE banners DROP CONSTRAINT IF EXISTS banners_section_slot_index_key;
+    CREATE UNIQUE INDEX IF NOT EXISTS banners_scope_unique_idx
+      ON banners (section, slot_index, province, city, region);
 
     ALTER TABLE stores ADD COLUMN IF NOT EXISTS is_demo BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE mobiles ADD COLUMN IF NOT EXISTS is_demo BOOLEAN NOT NULL DEFAULT FALSE;
@@ -716,6 +725,9 @@ function mapBanner(r) {
     id: r.id,
     section: r.section,
     slotIndex: Number(r.slot_index || 0),
+    province: r.province || 'همه استان‌ها',
+    city: r.city || 'همه شهرها',
+    region: r.region || 'همه مناطق',
     title: r.title || '',
     hasImage,
     imageUrl: hasImage ? `/api/banners/${encodeURIComponent(r.id)}/image?v=${updatedAt}` : '',

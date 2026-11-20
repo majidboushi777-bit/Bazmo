@@ -14,7 +14,12 @@ const {
   isValidEmailFormat,
   normalizeTier
 } = require('../src/constants');
-const { canAccessForumBoard, buildStateEtag } = require('../src/routes');
+const {
+  canAccessForumBoard,
+  buildStateEtag,
+  normalizeBannerLocation,
+  buildBannerId
+} = require('../src/routes');
 const {
   verifyGoogleIdToken,
   isSuperAdminEmail,
@@ -143,4 +148,35 @@ test('buildStateEtag always generates pure ASCII HTTP header values across all P
     buildStateEtag(42, false, 'تعمیرکار', true, 'u_123'),
     buildStateEtag(43, false, 'تعمیرکار', true, 'u_123')
   );
+});
+
+test('normalizeBannerLocation and buildBannerId scope nationwide vs province/city/region uniquely', () => {
+  const nationwide = normalizeBannerLocation('کل کشور', 'تهران', 'علاءالدین و جمهوری');
+  assert.deepEqual(nationwide, {
+    province: 'همه استان‌ها',
+    city: 'همه شهرها',
+    region: 'همه مناطق'
+  });
+  assert.equal(buildBannerId('mobile', 0, nationwide), 'bn_mobile_0');
+
+  const provScope = normalizeBannerLocation('تهران', 'همه شهرهای استان', 'علاءالدین');
+  assert.deepEqual(provScope, {
+    province: 'تهران',
+    city: 'همه شهرها',
+    region: 'همه مناطق'
+  });
+
+  const cityScope = normalizeBannerLocation('تهران', 'تهران', 'همه مناطق');
+  const regScope = normalizeBannerLocation('تهران', 'تهران', 'علاءالدین و جمهوری');
+  const regScopeNoZwnj = normalizeBannerLocation('تهران', 'تهران', 'علاءالدین و جمهوری');
+
+  const provId = buildBannerId('mobile', 0, provScope);
+  const cityId = buildBannerId('mobile', 0, cityScope);
+  const regId = buildBannerId('mobile', 0, regScope);
+  assert.match(provId, /^bn_mobile_0_[0-9a-f]{10}$/);
+  assert.match(cityId, /^bn_mobile_0_[0-9a-f]{10}$/);
+  assert.match(regId, /^bn_mobile_0_[0-9a-f]{10}$/);
+  assert.notEqual(provId, cityId);
+  assert.notEqual(cityId, regId);
+  assert.equal(regId, buildBannerId('mobile', 0, regScopeNoZwnj));
 });

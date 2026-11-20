@@ -65,6 +65,7 @@ import com.example.ui.components.BadgeTone
 import com.example.ui.components.BazmoBadge
 import com.example.ui.components.BazmoBannerImage
 import com.example.ui.components.BazmoCard
+import com.example.ui.components.cacheBannerBitmap
 import com.example.ui.components.BazmoDangerButton
 import com.example.ui.components.BazmoDropdownSelector
 import com.example.ui.components.BazmoEmptyState
@@ -744,18 +745,76 @@ private fun AdminBannersManager(state: BazmoUiState, viewModel: BazmoViewModel) 
         )
     }
     var selectedSection by rememberSaveable { mutableStateOf("mobile") }
-    val existingBanners = remember(state.db.banners, selectedSection) {
-        state.db.banners.filter { it.section == selectedSection }.associateBy { it.slotIndex }
+    var scopeProvince by rememberSaveable { mutableStateOf("همه استان‌ها") }
+    var scopeCity by rememberSaveable { mutableStateOf("همه شهرها") }
+    var scopeRegion by rememberSaveable { mutableStateOf("همه مناطق") }
+
+    val isProvAll = BazmoLocations.isAllScope(scopeProvince)
+    val normProv = if (isProvAll) "همه استان‌ها" else scopeProvince
+    val normCity = if (isProvAll || BazmoLocations.isAllScope(scopeCity)) "همه شهرها" else scopeCity
+    val normRegion = if (isProvAll || BazmoLocations.isAllScope(normCity) || BazmoLocations.isAllScope(scopeRegion)) "همه مناطق" else scopeRegion
+
+    val provOptions = remember { listOf("همه استان‌ها") + BazmoLocations.provinces() }
+    val cityOptions = remember(normProv) {
+        if (BazmoLocations.isAllScope(normProv)) listOf("همه شهرها")
+        else listOf("همه شهرها") + BazmoLocations.citiesFor(normProv)
     }
+    val regionOptions = remember(normProv, normCity) {
+        if (BazmoLocations.isAllScope(normProv) || BazmoLocations.isAllScope(normCity)) listOf("همه مناطق")
+        else BazmoLocations.regionsFor(normProv, normCity)
+    }
+
+    val scopeKey = remember(normProv, normCity, normRegion) {
+        "${BazmoLocations.normalizeZwnj(normProv)}|${BazmoLocations.normalizeZwnj(normCity)}|${BazmoLocations.normalizeZwnj(normRegion)}"
+    }
+
+    val existingBanners = remember(state.db.banners, selectedSection, scopeKey) {
+        state.db.banners.filter { b ->
+            val bProvAll = BazmoLocations.isAllScope(b.province)
+            val bCityAll = BazmoLocations.isAllScope(b.city)
+            val bRegAll = BazmoLocations.isAllScope(b.region)
+            val bProv = if (bProvAll) "همه استان‌ها" else b.province
+            val bCity = if (bProvAll || bCityAll) "همه شهرها" else b.city
+            val bReg = if (bProvAll || bCityAll || bRegAll) "همه مناطق" else b.region
+            b.section == selectedSection &&
+                BazmoLocations.normalizeZwnj(bProv) == BazmoLocations.normalizeZwnj(normProv) &&
+                BazmoLocations.normalizeZwnj(bCity) == BazmoLocations.normalizeZwnj(normCity) &&
+                BazmoLocations.normalizeZwnj(bReg) == BazmoLocations.normalizeZwnj(normRegion)
+        }.associateBy { it.slotIndex }
+    }
+
+    val configuredScopes = remember(state.db.banners, selectedSection) {
+        state.db.banners
+            .filter { it.section == selectedSection && it.hasImage }
+            .groupBy { b ->
+                val pAll = BazmoLocations.isAllScope(b.province)
+                val cAll = BazmoLocations.isAllScope(b.city)
+                val rAll = BazmoLocations.isAllScope(b.region)
+                Triple(
+                    if (pAll) "همه استان‌ها" else b.province,
+                    if (pAll || cAll) "همه شهرها" else b.city,
+                    if (pAll || cAll || rAll) "همه مناطق" else b.region
+                )
+            }
+            .map { (triple, items) -> triple to items.size }
+    }
+
     val approvedStores = remember(state.db.stores) {
         state.db.stores.filter { it.status == "approved" }
+    }
+
+    val activeScopeLabel = when {
+        BazmoLocations.isAllScope(normProv) -> "🌍 کل کشور (نمایش در سراسر ایران)"
+        BazmoLocations.isAllScope(normCity) -> "📍 استان $normProv (تمام شهرها)"
+        BazmoLocations.isAllScope(normRegion) -> "📍 $normProv ← شهر $normCity (تمام مناطق)"
+        else -> "📍 $normProv ← $normCity ← $normRegion"
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         BazmoSectionHeader("🖼️ مدیریت ۴ بنر تبلیغاتی هر بخش")
         BazmoCard {
             Text(
-                text = "برای هر بخش تا ۴ کاشی تبلیغاتی عکس‌دار با لینک سایت خارجی یا لینک مستقیم به فروشگاه ثبت کنید:",
+                text = "برای هر بخش تا ۴ کاشی تبلیغاتی عکس‌دار را به‌صورت جداگانه برای کل کشور، استان، شهر یا منطقه تنظیم کنید:",
                 style = MaterialTheme.typography.bodySmall,
                 color = TextMuted,
                 modifier = Modifier.padding(bottom = 8.dp)
@@ -769,12 +828,98 @@ private fun AdminBannersManager(state: BazmoUiState, viewModel: BazmoViewModel) 
                     )
                 }
             }
+            Spacer(modifier = Modifier.height(10.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "🎯 محدوده جغرافیایی بنرها:",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = NavyDeep
+                )
+                BazmoFilterChip(
+                    label = "🌍 کل کشور",
+                    selected = BazmoLocations.isAllScope(normProv),
+                    onClick = {
+                        scopeProvince = "همه استان‌ها"
+                        scopeCity = "همه شهرها"
+                        scopeRegion = "همه مناطق"
+                    }
+                )
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                BazmoDropdownSelector(
+                    label = "استان:",
+                    selectedValue = normProv,
+                    options = provOptions,
+                    onSelect = { p ->
+                        scopeProvince = p
+                        scopeCity = "همه شهرها"
+                        scopeRegion = "همه مناطق"
+                    },
+                    modifier = Modifier.weight(1f)
+                )
+                BazmoDropdownSelector(
+                    label = "شهر:",
+                    selectedValue = normCity,
+                    options = cityOptions,
+                    onSelect = { c ->
+                        scopeCity = c
+                        scopeRegion = "همه مناطق"
+                    },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            if (!BazmoLocations.isAllScope(normProv) && !BazmoLocations.isAllScope(normCity)) {
+                Spacer(modifier = Modifier.height(6.dp))
+                BazmoDropdownSelector(
+                    label = "منطقه / محله:",
+                    selectedValue = normRegion,
+                    options = regionOptions,
+                    onSelect = { r -> scopeRegion = r }
+                )
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            BazmoBadge(activeScopeLabel, BadgeTone.BLUE)
+            if (configuredScopes.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(configuredScopes, key = { (t, _) -> "${t.first}|${t.second}|${t.third}" }) { (triple, count) ->
+                        val pillLabel = when {
+                            BazmoLocations.isAllScope(triple.first) -> "🌍 کل کشور"
+                            BazmoLocations.isAllScope(triple.second) -> "📍 استان ${triple.first}"
+                            BazmoLocations.isAllScope(triple.third) -> "📍 ${triple.first} · ${triple.second}"
+                            else -> "📍 ${triple.second} (${triple.third})"
+                        }
+                        val isCur = BazmoLocations.normalizeZwnj(triple.first) == BazmoLocations.normalizeZwnj(normProv) &&
+                            BazmoLocations.normalizeZwnj(triple.second) == BazmoLocations.normalizeZwnj(normCity) &&
+                            BazmoLocations.normalizeZwnj(triple.third) == BazmoLocations.normalizeZwnj(normRegion)
+                        BazmoFilterChip(
+                            label = "$pillLabel (${count.toPersianNumber()})",
+                            selected = isCur,
+                            onClick = {
+                                scopeProvince = triple.first
+                                scopeCity = triple.second
+                                scopeRegion = triple.third
+                            }
+                        )
+                    }
+                }
+            }
         }
 
         (0..3).forEach { slotIdx ->
             AdminBannerSlotCard(
                 section = selectedSection,
                 slotIndex = slotIdx,
+                scopeProvince = normProv,
+                scopeCity = normCity,
+                scopeRegion = normRegion,
+                scopeKey = scopeKey,
                 existing = existingBanners[slotIdx],
                 approvedStores = approvedStores,
                 viewModel = viewModel
@@ -787,6 +932,10 @@ private fun AdminBannersManager(state: BazmoUiState, viewModel: BazmoViewModel) 
 private fun AdminBannerSlotCard(
     section: String,
     slotIndex: Int,
+    scopeProvince: String,
+    scopeCity: String,
+    scopeRegion: String,
+    scopeKey: String,
     existing: BannerEntity?,
     approvedStores: List<com.example.data.StoreEntity>,
     viewModel: BazmoViewModel
@@ -794,18 +943,31 @@ private fun AdminBannerSlotCard(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var title by rememberSaveable(section, slotIndex, existing?.updatedAt) {
+    var title by rememberSaveable(section, slotIndex, scopeKey, existing?.updatedAt) {
         mutableStateOf(existing?.title.orEmpty())
     }
-    var linkType by rememberSaveable(section, slotIndex, existing?.updatedAt) {
+    var linkType by rememberSaveable(section, slotIndex, scopeKey, existing?.updatedAt) {
         mutableStateOf(existing?.linkType?.ifBlank { "none" } ?: "none")
     }
-    var linkTarget by rememberSaveable(section, slotIndex, existing?.updatedAt) {
+    var linkTarget by rememberSaveable(section, slotIndex, scopeKey, existing?.updatedAt) {
         mutableStateOf(existing?.linkTarget.orEmpty())
     }
-    var pendingBase64 by remember(section, slotIndex, existing?.updatedAt) { mutableStateOf("") }
-    var pendingPreview by remember(section, slotIndex, existing?.updatedAt) { mutableStateOf<ImageBitmap?>(null) }
+    var pendingBase64 by rememberSaveable(section, slotIndex, scopeKey) { mutableStateOf("") }
+    var pendingPreview by remember(section, slotIndex, scopeKey) { mutableStateOf<ImageBitmap?>(null) }
     var isPicking by remember { mutableStateOf(false) }
+
+    val decodedFallbackPreview = remember(pendingBase64, pendingPreview) {
+        if (pendingPreview != null) {
+            pendingPreview
+        } else if (pendingBase64.isNotBlank()) {
+            runCatching {
+                val bytes = Base64.decode(pendingBase64, Base64.DEFAULT)
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+            }.getOrNull()
+        } else {
+            null
+        }
+    }
 
     val pickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -846,10 +1008,10 @@ private fun AdminBannerSlotCard(
                 color = NavyDeep
             )
             BazmoBadge(
-                text = if (pendingPreview != null) "تصویر جدید آماده ذخیره"
+                text = if (decodedFallbackPreview != null) "تصویر جدید آماده ذخیره"
                 else if (existing?.hasImage == true) "فعال"
                 else "خالی",
-                tone = if (pendingPreview != null) BadgeTone.GOLD
+                tone = if (decodedFallbackPreview != null) BadgeTone.GOLD
                 else if (existing?.hasImage == true) BadgeTone.GREEN
                 else BadgeTone.BLUE
             )
@@ -866,7 +1028,7 @@ private fun AdminBannerSlotCard(
                 .background(SoftSurface),
             contentAlignment = Alignment.Center
         ) {
-            val localBmp = pendingPreview
+            val localBmp = decodedFallbackPreview
             if (localBmp != null) {
                 Image(
                     bitmap = localBmp,
@@ -881,11 +1043,27 @@ private fun AdminBannerSlotCard(
                     modifier = Modifier.fillMaxSize()
                 )
             } else {
-                Text(
-                    text = "هنوز تصویری برای این اسلات بارگذاری نشده است",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextMuted
-                )
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                    modifier = Modifier.padding(12.dp)
+                ) {
+                    Text(text = "📢", fontSize = 20.sp)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "اینجا جای تبلیغات شماست",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = NavyDeep,
+                        textAlign = TextAlign.Center
+                    )
+                    Text(
+                        text = "هنوز تصویری برای این محدوده بارگذاری نشده است",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextMuted,
+                        textAlign = TextAlign.Center
+                    )
+                }
             }
         }
 
@@ -965,16 +1143,23 @@ private fun AdminBannerSlotCard(
                 text = "💾 ذخیره بنر",
                 onClick = {
                     val hasExistingImg = existing?.hasImage == true
+                    val capturedBmp = decodedFallbackPreview
                     viewModel.adminUpsertBanner(
                         section = section,
                         slotIndex = slotIndex,
+                        province = scopeProvince,
+                        city = scopeCity,
+                        region = scopeRegion,
                         title = title,
                         linkType = linkType,
                         linkTarget = if (linkType == "none") "" else linkTarget,
                         imageMime = "image/jpeg",
                         imageData = pendingBase64,
                         keepExistingImage = pendingBase64.isBlank() && hasExistingImg
-                    ) {
+                    ) { savedBanner ->
+                        if (capturedBmp != null && savedBanner != null && savedBanner.imageUrl.isNotBlank()) {
+                            cacheBannerBitmap(savedBanner.imageUrl, capturedBmp)
+                        }
                         pendingBase64 = ""
                         pendingPreview = null
                     }
@@ -987,7 +1172,11 @@ private fun AdminBannerSlotCard(
             if (existing != null) {
                 BazmoDangerButton(
                     text = "🗑️ حذف",
-                    onClick = { viewModel.adminDeleteBanner(existing.id) },
+                    onClick = {
+                        pendingBase64 = ""
+                        pendingPreview = null
+                        viewModel.adminDeleteBanner(existing.id)
+                    },
                     compact = true,
                     modifier = Modifier.testTag("delete_banner_${section}_$slotIndex")
                 )

@@ -1578,6 +1578,43 @@ html[data-theme="dark"] .toast {
   flex: 0 0 auto;
 }
 
+.promo-banner-tile.promo-banner-empty {
+  border: 1.5px dashed var(--navy-light);
+  background: linear-gradient(135deg, var(--navy-soft), var(--surface));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 10px 8px;
+  gap: 4px;
+}
+
+.promo-banner-empty-icon {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.promo-banner-empty-title {
+  font-size: 12px;
+  font-weight: 900;
+  color: var(--navy-deep);
+  line-height: 1.35;
+}
+
+.promo-banner-empty-sub {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.banner-scope-pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
 /* ==================== PERSISTENT BIOMETRIC QUICK-LOGIN CARD ==================== */
 .saved-account-card {
   margin-bottom: 14px;

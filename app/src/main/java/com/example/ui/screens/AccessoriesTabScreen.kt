@@ -68,7 +68,9 @@ fun AccessoriesTabScreen(
 ) {
     val av = state.session.accView
     val uriHandler = LocalUriHandler.current
-    val accBanners = remember(state.db.banners) { state.bannersForSection("acc") }
+    val accBanners = remember(state.db.banners, state.session.province, state.session.city, state.session.region) {
+        state.bannersForSection("acc")
+    }
     val cats = remember(state.db.accessories) {
         listOf("همه") + state.db.accessories.map { it.cat }.distinct()
     }
@@ -159,18 +161,19 @@ fun AccessoriesTabScreen(
                 }
             }
 
-            if (accBanners.isNotEmpty()) {
-                item(key = "acc_promo_banners") {
-                    BazmoPromoBannerGrid(
-                        banners = accBanners,
-                        onBannerClick = { banner ->
-                            viewModel.openPromoBanner(banner) { url ->
-                                runCatching { uriHandler.openUri(url) }
-                                    .onFailure { viewModel.showToast("امکان باز کردن لینک وجود ندارد") }
-                            }
+            item(key = "acc_promo_banners") {
+                BazmoPromoBannerGrid(
+                    slots = accBanners,
+                    onBannerClick = { banner ->
+                        viewModel.openPromoBanner(banner) { url ->
+                            runCatching { uriHandler.openUri(url) }
+                                .onFailure { viewModel.showToast("امکان باز کردن لینک وجود ندارد") }
                         }
-                    )
-                }
+                    },
+                    onEmptySlotClick = {
+                        viewModel.showToast("اینجا جای تبلیغات شماست؛ جهت ثبت بنر با مدیریت بازمو تماس بگیرید.")
+                    }
+                )
             }
 
             item(key = "acc_cats") {

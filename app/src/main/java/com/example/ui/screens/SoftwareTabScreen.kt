@@ -69,7 +69,9 @@ fun SoftwareTabScreen(
 ) {
     val sw = state.session.swView
     val uriHandler = LocalUriHandler.current
-    val swBanners = remember(state.db.banners) { state.bannersForSection("software") }
+    val swBanners = remember(state.db.banners, state.session.province, state.session.city, state.session.region) {
+        state.bannersForSection("software")
+    }
 
     BackHandler(enabled = sw.mode != SoftwareSubMode.HOME && sw.mode != SoftwareSubMode.FORUM) {
         viewModel.setSwMode(SoftwareSubMode.HOME)
@@ -444,18 +446,19 @@ fun SoftwareTabScreen(
                                 modifier = Modifier.padding(bottom = 8.dp)
                             )
                         }
-                        if (swBanners.isNotEmpty()) {
-                            item(key = "sw_promo_banners") {
-                                BazmoPromoBannerGrid(
-                                    banners = swBanners,
-                                    onBannerClick = { banner ->
-                                        viewModel.openPromoBanner(banner) { url ->
-                                            runCatching { uriHandler.openUri(url) }
-                                                .onFailure { viewModel.showToast("امکان باز کردن لینک وجود ندارد") }
-                                        }
+                        item(key = "sw_promo_banners") {
+                            BazmoPromoBannerGrid(
+                                slots = swBanners,
+                                onBannerClick = { banner ->
+                                    viewModel.openPromoBanner(banner) { url ->
+                                        runCatching { uriHandler.openUri(url) }
+                                            .onFailure { viewModel.showToast("امکان باز کردن لینک وجود ندارد") }
                                     }
-                                )
-                            }
+                                },
+                                onEmptySlotClick = {
+                                    viewModel.showToast("اینجا جای تبلیغات شماست؛ جهت ثبت بنر با مدیریت بازمو تماس بگیرید.")
+                                }
+                            )
                         }
                         if (!state.canAccessSoftwareSpecialized) {
                             item(key = "sw_home_notice") {

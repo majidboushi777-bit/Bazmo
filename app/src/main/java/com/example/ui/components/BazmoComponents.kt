@@ -71,6 +71,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.BannerEntity
 import com.example.data.BazmoServerConfig
+import com.example.data.toPersianNumber
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -819,6 +820,16 @@ fun BazmoOrderStepper(status: String) {
     }
 }
 
+internal fun resolveBannerFullUrl(imageUrl: String): String {
+    val raw = imageUrl.trim()
+    return when {
+        raw.isEmpty() -> ""
+        raw.startsWith("http://", ignoreCase = true) || raw.startsWith("https://", ignoreCase = true) -> raw
+        raw.startsWith("/") -> "${BazmoServerConfig.baseUrl()}$raw"
+        else -> "${BazmoServerConfig.baseUrl()}/$raw"
+    }
+}
+
 private object BazmoBannerImageCache {
     private val maxKb = ((Runtime.getRuntime().maxMemory() / 1024L) / 8L).toInt().coerceIn(4 * 1024, 24 * 1024)
     private val cache = object : LruCache<String, ImageBitmap>(maxKb) {
@@ -835,53 +846,62 @@ private object BazmoBannerImageCache {
     }
 }
 
+internal fun cacheBannerBitmap(imageUrl: String, bitmap: ImageBitmap) {
+    val fullUrl = resolveBannerFullUrl(imageUrl)
+    if (fullUrl.isNotEmpty()) {
+        BazmoBannerImageCache.put(fullUrl, bitmap)
+    }
+}
+
 @Composable
 fun BazmoBannerImage(
     imageUrl: String,
     contentDescription: String,
     modifier: Modifier = Modifier
 ) {
-    val fullUrl = remember(imageUrl) {
-        val raw = imageUrl.trim()
-        when {
-            raw.isEmpty() -> ""
-            raw.startsWith("http://", ignoreCase = true) || raw.startsWith("https://", ignoreCase = true) -> raw
-            raw.startsWith("/") -> "${BazmoServerConfig.baseUrl()}$raw"
-            else -> "${BazmoServerConfig.baseUrl()}/$raw"
-        }
-    }
+    val fullUrl = remember(imageUrl) { resolveBannerFullUrl(imageUrl) }
     var bitmap by remember(fullUrl) {
         mutableStateOf(if (fullUrl.isNotEmpty()) BazmoBannerImageCache.get(fullUrl) else null)
     }
 
     LaunchedEffect(fullUrl) {
         if (fullUrl.isEmpty() || bitmap != null) return@LaunchedEffect
-        val loaded = withContext(Dispatchers.IO) {
-            try {
-                val req = Request.Builder().url(fullUrl).get().build()
-                BazmoServerConfig.okHttpClient.newCall(req).execute().use { res ->
-                    if (!res.isSuccessful) return@withContext null
-                    val bytes = res.body?.bytes() ?: return@withContext null
-                    if (bytes.isEmpty() || bytes.size > 5 * 1024 * 1024) return@withContext null
-                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-                    var sample = 1
-                    val maxDim = 1080
-                    while (bounds.outWidth / sample > maxDim || bounds.outHeight / sample > maxDim) {
-                        sample *= 2
-                    }
-                    val opts = BitmapFactory.Options().apply { inSampleSize = sample.coerceAtLeast(1) }
-                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)?.asImageBitmap()
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Throwable) {
-                null
+        val delays = listOf(0L, 650L, 1600L)
+        for (waitMs in delays) {
+            if (waitMs > 0L) kotlinx.coroutines.delay(waitMs)
+            val cached = BazmoBannerImageCache.get(fullUrl)
+            if (cached != null) {
+                bitmap = cached
+                return@LaunchedEffect
             }
-        }
-        if (loaded != null) {
-            BazmoBannerImageCache.put(fullUrl, loaded)
-            bitmap = loaded
+            val loaded = withContext(Dispatchers.IO) {
+                try {
+                    val req = Request.Builder().url(fullUrl).get().build()
+                    BazmoServerConfig.okHttpClient.newCall(req).execute().use { res ->
+                        if (!res.isSuccessful) return@withContext null
+                        val bytes = res.body?.bytes() ?: return@withContext null
+                        if (bytes.isEmpty() || bytes.size > 5 * 1024 * 1024) return@withContext null
+                        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                        var sample = 1
+                        val maxDim = 1080
+                        while (bounds.outWidth / sample > maxDim || bounds.outHeight / sample > maxDim) {
+                            sample *= 2
+                        }
+                        val opts = BitmapFactory.Options().apply { inSampleSize = sample.coerceAtLeast(1) }
+                        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)?.asImageBitmap()
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Throwable) {
+                    null
+                }
+            }
+            if (loaded != null) {
+                BazmoBannerImageCache.put(fullUrl, loaded)
+                bitmap = loaded
+                return@LaunchedEffect
+            }
         }
     }
 
@@ -910,16 +930,14 @@ fun BazmoBannerImage(
 
 @Composable
 fun BazmoPromoBannerGrid(
-    banners: List<BannerEntity>,
+    slots: List<BannerEntity?>,
     onBannerClick: (BannerEntity) -> Unit,
+    onEmptySlotClick: (Int) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val activeBanners = remember(banners) {
-        banners.filter { it.hasImage && it.imageUrl.isNotBlank() }
-            .sortedBy { it.slotIndex }
-            .take(4)
+    val normalizedSlots = remember(slots) {
+        (0..3).map { idx -> slots.getOrNull(idx)?.takeIf { it.hasImage && it.imageUrl.isNotBlank() } }
     }
-    if (activeBanners.isEmpty()) return
 
     BoxWithConstraints(
         modifier = modifier
@@ -927,74 +945,114 @@ fun BazmoPromoBannerGrid(
             .padding(bottom = 10.dp)
     ) {
         val cols = if (maxWidth >= 640.dp) 4 else 2
-        val rows = remember(activeBanners, cols) { activeBanners.chunked(cols) }
+        val indexedRows = remember(normalizedSlots, cols) {
+            normalizedSlots.mapIndexed { idx, banner -> idx to banner }.chunked(cols)
+        }
 
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            rows.forEach { rowItems ->
+            indexedRows.forEach { rowItems ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    rowItems.forEach { banner ->
-                        val isClickable = banner.linkType != "none" && banner.linkTarget.isNotBlank()
+                    rowItems.forEach { (slotIdx, banner) ->
                         val shape = RoundedCornerShape(14.dp)
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .aspectRatio(1.78f)
-                                .clip(shape)
-                                .border(1.dp, BorderLight, shape)
-                                .let { m ->
-                                    if (isClickable) m.clickable { onBannerClick(banner) } else m
-                                }
-                                .testTag("promo_banner_${banner.id}")
-                        ) {
-                            BazmoBannerImage(
-                                imageUrl = banner.imageUrl,
-                                contentDescription = banner.title.ifBlank { "بنر تبلیغاتی" },
-                                modifier = Modifier.fillMaxSize()
-                            )
-                            val actionBadge = when (banner.linkType) {
-                                "store" -> "🏪 مشاهده فروشگاه"
-                                "url" -> "🌐 مشاهده سایت"
-                                else -> ""
-                            }
-                            if (banner.title.isNotBlank() || (isClickable && actionBadge.isNotEmpty())) {
-                                Row(
-                                    modifier = Modifier
-                                        .align(Alignment.BottomCenter)
-                                        .fillMaxWidth()
-                                        .background(
-                                            Brush.verticalGradient(
-                                                listOf(Color.Transparent, Color.Black.copy(alpha = 0.72f))
-                                            )
-                                        )
-                                        .padding(horizontal = 8.dp, vertical = 6.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                        if (banner == null) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .aspectRatio(1.78f)
+                                    .clip(shape)
+                                    .background(Brush.linearGradient(listOf(NavySoft, CardSurface)))
+                                    .border(1.2.dp, NavyLight.copy(alpha = 0.55f), shape)
+                                    .clickable { onEmptySlotClick(slotIdx) }
+                                    .padding(horizontal = 8.dp, vertical = 6.dp)
+                                    .testTag("promo_banner_empty_$slotIdx"),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
                                 ) {
+                                    Text(text = "📢", fontSize = 18.sp)
+                                    Spacer(modifier = Modifier.height(3.dp))
                                     Text(
-                                        text = banner.title.ifBlank { actionBadge },
-                                        color = Color.White,
+                                        text = "اینجا جای تبلیغات شماست",
                                         style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.weight(1f)
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = NavyDeep,
+                                        textAlign = TextAlign.Center,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
                                     )
-                                    if (banner.title.isNotBlank() && isClickable && actionBadge.isNotEmpty()) {
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Surface(
-                                            color = GoldAccent,
-                                            shape = RoundedCornerShape(6.dp)
-                                        ) {
-                                            Text(
-                                                text = if (banner.linkType == "store") "فروشگاه" else "لینک",
-                                                color = Color(0xFF111827),
-                                                fontSize = 9.sp,
-                                                fontWeight = FontWeight.Black,
-                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                    Text(
+                                        text = "جایگاه تبلیغاتی ${(slotIdx + 1).toPersianNumber()}",
+                                        fontSize = 9.sp,
+                                        color = TextMuted,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                        } else {
+                            val isClickable = banner.linkType != "none" && banner.linkTarget.isNotBlank()
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .aspectRatio(1.78f)
+                                    .clip(shape)
+                                    .border(1.dp, BorderLight, shape)
+                                    .let { m ->
+                                        if (isClickable) m.clickable { onBannerClick(banner) } else m
+                                    }
+                                    .testTag("promo_banner_${banner.id}")
+                            ) {
+                                BazmoBannerImage(
+                                    imageUrl = banner.imageUrl,
+                                    contentDescription = banner.title.ifBlank { "بنر تبلیغاتی" },
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                                val actionBadge = when (banner.linkType) {
+                                    "store" -> "🏪 مشاهده فروشگاه"
+                                    "url" -> "🌐 مشاهده سایت"
+                                    else -> ""
+                                }
+                                if (banner.title.isNotBlank() || (isClickable && actionBadge.isNotEmpty())) {
+                                    Row(
+                                        modifier = Modifier
+                                            .align(Alignment.BottomCenter)
+                                            .fillMaxWidth()
+                                            .background(
+                                                Brush.verticalGradient(
+                                                    listOf(Color.Transparent, Color.Black.copy(alpha = 0.72f))
+                                                )
                                             )
+                                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = banner.title.ifBlank { actionBadge },
+                                            color = Color.White,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        if (banner.title.isNotBlank() && isClickable && actionBadge.isNotEmpty()) {
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Surface(
+                                                color = GoldAccent,
+                                                shape = RoundedCornerShape(6.dp)
+                                            ) {
+                                                Text(
+                                                    text = if (banner.linkType == "store") "فروشگاه" else "لینک",
+                                                    color = Color(0xFF111827),
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Black,
+                                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                                )
+                                            }
                                         }
                                     }
                                 }

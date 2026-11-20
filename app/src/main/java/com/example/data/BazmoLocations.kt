@@ -70,8 +70,21 @@ object BazmoLocations {
     fun regionsWithAllFor(province: String, city: String): List<String> =
         if (isAllScope(province) || isAllScope(city)) listOf(ALL_REGIONS) else regionsFor(province, city)
 
+    fun toEnglishDigits(value: String?): String {
+        val raw = value ?: return ""
+        val sb = StringBuilder(raw.length)
+        for (ch in raw) {
+            when (ch) {
+                in '۰'..'۹' -> sb.append(('0'.code + (ch.code - '۰'.code)).toChar())
+                in '٠'..'٩' -> sb.append(('0'.code + (ch.code - '٠'.code)).toChar())
+                else -> sb.append(ch)
+            }
+        }
+        return sb.toString()
+    }
+
     fun normalizeZwnj(value: String?): String =
-        (value ?: "")
+        toEnglishDigits(value)
             .replace("\u200c", "")
             .replace("ي", "ی")
             .replace("ك", "ک")
@@ -81,12 +94,18 @@ object BazmoLocations {
     fun isAllScope(value: String?): Boolean {
         val norm = normalizeZwnj(value)
         return norm.isEmpty() ||
+            norm.equals("all", ignoreCase = true) ||
             norm == "همه" ||
             norm == "همهاستانها" ||
             norm == "همهشهرها" ||
+            norm == "همهشهرهایاستان" ||
             norm == "همهمناطق" ||
+            norm == "همهمناطقشهر" ||
             norm == "همهبخشها" ||
+            norm == "همهنقشها" ||
+            norm == "همهوضعیتها" ||
             norm == "همهکشور" ||
+            norm == "کلکشور" ||
             norm == "سراسرکشور"
     }
 }

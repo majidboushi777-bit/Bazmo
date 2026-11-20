@@ -70,6 +70,9 @@ internal data class UserWrapper(val user: UserEntity? = null)
 @Keep
 internal data class NotificationsWrapper(val notifications: List<NotificationEntity> = emptyList())
 
+@Keep
+internal data class BannerWrapper(val banner: BannerEntity? = null)
+
 class BazmoRepository(
     private val baseUrl: String = BazmoServerConfig.baseUrl(),
     private val authToken: String,
@@ -108,7 +111,13 @@ class BazmoRepository(
         forumPosts = state.forumPosts.sortedByDescending { it.createdAtMs },
         deskRentals = state.deskRentals.sortedByDescending { it.sortOrder },
         deskRequests = state.deskRequests.sortedByDescending { it.sortOrder },
-        banners = state.banners.sortedWith(compareBy<BannerEntity> { it.section }.thenBy { it.slotIndex })
+        banners = state.banners.sortedWith(
+            compareBy<BannerEntity> { it.section }
+                .thenBy { it.slotIndex }
+                .thenBy { it.province }
+                .thenBy { it.city }
+                .thenBy { it.region }
+        )
     )
 
     suspend fun loadCachedDbState(context: Context): BazmoDbState? = withContext(Dispatchers.IO) {
@@ -622,27 +631,54 @@ class BazmoRepository(
     suspend fun upsertBannerByAdmin(
         section: String,
         slotIndex: Int,
+        province: String,
+        city: String,
+        region: String,
         title: String,
         linkType: String,
         linkTarget: String,
         imageMime: String,
         imageData: String,
         keepExistingImage: Boolean
-    ): Result<Unit> = executeJsonMutation(
-        method = "POST",
-        path = "/api/admin/banners",
-        operationType = OperationType.WRITE,
-        bodyMap = mapOf(
-            "section" to section,
-            "slotIndex" to slotIndex,
-            "title" to title.trim().take(120),
-            "linkType" to linkType,
-            "linkTarget" to linkTarget.trim().take(500),
-            "imageMime" to imageMime,
-            "imageData" to imageData,
-            "keepExistingImage" to keepExistingImage
-        )
-    )
+    ): Result<BannerEntity?> = withContext(Dispatchers.IO) {
+        try {
+            val payload = mapOf(
+                "section" to section,
+                "slotIndex" to slotIndex,
+                "province" to province.trim().ifBlank { "همه استان‌ها" }.take(80),
+                "city" to city.trim().ifBlank { "همه شهرها" }.take(80),
+                "region" to region.trim().ifBlank { "همه مناطق" }.take(80),
+                "title" to title.trim().take(120),
+                "linkType" to linkType,
+                "linkTarget" to linkTarget.trim().take(500),
+                "imageMime" to imageMime,
+                "imageData" to imageData,
+                "keepExistingImage" to keepExistingImage
+            )
+            val request = Request.Builder()
+                .url("$normalizedBaseUrl/api/admin/banners")
+                .header("Authorization", "Bearer $authToken")
+                .post(mapToJson(payload).toRequestBody(BazmoServerConfig.JSON_MEDIA_TYPE))
+                .build()
+            client.newCall(request).execute().use { res ->
+                val body = res.body?.string().orEmpty()
+                if (!res.isSuccessful) {
+                    return@withContext Result.failure(
+                        BazmoApiException(res.code, extractError(body, "خطا در ذخیره بنر تبلیغاتی (کد ${res.code})"))
+                    )
+                }
+                val savedBanner = runCatching {
+                    moshi.adapter(BannerWrapper::class.java).fromJson(body)?.banner
+                }.getOrNull()
+                triggerRefresh(clearEtag = true)
+                Result.success(savedBanner)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleApiError(e, OperationType.WRITE, "/api/admin/banners", currentUid)
+        }
+    }
 
     suspend fun deleteBannerByAdmin(id: String): Result<Unit> =
         executeJsonMutation(

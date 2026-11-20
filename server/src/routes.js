@@ -39,10 +39,16 @@ function isAllScope(val) {
     n === 'همه' ||
     n === 'همهاستانها' ||
     n === 'همهشهرها' ||
+    n === 'همهشهرهایاستان' ||
     n === 'همهمناطق' ||
+    n === 'همهمناطقشهر' ||
     n === 'همهبخشها' ||
     n === 'همهکشور' ||
-    n === 'سراسرکشور'
+    n === 'سراسرکشور' ||
+    n === 'کلکشور' ||
+    n === 'همهنقشها' ||
+    n === 'همهوضعیتها' ||
+    n.toLowerCase() === 'all'
   );
 }
 
@@ -57,6 +63,31 @@ function buildStateEtag(version, isAdmin, userTier, showDemoData, uid) {
   const raw = `v${version}-${isAdmin ? 'A' : normalizeZwnj(userTier)}-${showDemoData ? '1' : '0'}-${String(uid || '')}`;
   const digest = crypto.createHash('sha256').update(raw, 'utf8').digest('base64url');
   return `"${digest}"`;
+}
+
+function normalizeBannerLocation(province, city, region) {
+  const rawProv = String(province || '').trim().slice(0, 80);
+  const rawCity = String(city || '').trim().slice(0, 80);
+  const rawReg = String(region || '').trim().slice(0, 80);
+  if (isAllScope(rawProv)) {
+    return { province: 'همه استان‌ها', city: 'همه شهرها', region: 'همه مناطق' };
+  }
+  if (isAllScope(rawCity)) {
+    return { province: rawProv, city: 'همه شهرها', region: 'همه مناطق' };
+  }
+  if (isAllScope(rawReg)) {
+    return { province: rawProv, city: rawCity, region: 'همه مناطق' };
+  }
+  return { province: rawProv, city: rawCity, region: rawReg };
+}
+
+function buildBannerId(section, slotIndex, loc) {
+  if (isAllScope(loc.province)) {
+    return `bn_${section}_${slotIndex}`;
+  }
+  const key = `${normalizeZwnj(loc.province)}|${isAllScope(loc.city) ? 'all' : normalizeZwnj(loc.city)}|${isAllScope(loc.region) ? 'all' : normalizeZwnj(loc.region)}`;
+  const hash = crypto.createHash('sha1').update(key, 'utf8').digest('hex').slice(0, 10);
+  return `bn_${section}_${slotIndex}_${hash}`;
 }
 
 function createApiRouter(broadcastSync = () => {}, sseClients = new Set(), getStateVersion = () => 1) {
@@ -389,7 +420,7 @@ function createApiRouter(broadcastSync = () => {}, sseClients = new Set(), getSt
             ),
         deskRequests: db.pool.query(`SELECT * FROM desk_requests ${demoWhere} ORDER BY sort_order DESC`),
         banners: db.pool.query(
-          "SELECT id, section, slot_index, title, (image_data <> '') AS has_img, image_mime, link_type, link_target, updated_at FROM banners ORDER BY section ASC, slot_index ASC"
+          "SELECT id, section, slot_index, province, city, region, title, (image_data <> '') AS has_img, image_mime, link_type, link_target, updated_at FROM banners ORDER BY section ASC, slot_index ASC, province ASC, city ASC, region ASC"
         )
       };
 
@@ -991,7 +1022,8 @@ function createApiRouter(broadcastSync = () => {}, sseClients = new Set(), getSt
       if (!Number.isInteger(slotIndex) || slotIndex < 0 || slotIndex > 3) {
         return res.status(400).json({ error: 'شماره کاشی بنر باید بین ۰ تا ۳ باشد.' });
       }
-      const id = `bn_${section}_${slotIndex}`;
+      const loc = normalizeBannerLocation(req.body?.province, req.body?.city, req.body?.region);
+      const id = buildBannerId(section, slotIndex, loc);
       const title = String(req.body?.title || '').trim().slice(0, 120);
       const rawLinkType = String(req.body?.linkType || 'none').trim();
       const linkType = ['none', 'url', 'store'].includes(rawLinkType) ? rawLinkType : 'none';
@@ -1008,7 +1040,7 @@ function createApiRouter(broadcastSync = () => {}, sseClients = new Set(), getSt
       }
 
       const keepExistingImage = Boolean(req.body?.keepExistingImage);
-      const rawImageInput = String(req.body?.imageData || '').trim();
+      const rawImageInput = String(req.body?.imageData || req.body?.imageBase64 || '').trim();
       let imageMime = String(req.body?.imageMime || 'image/jpeg').trim();
       let base64Data = '';
 
@@ -1036,23 +1068,26 @@ function createApiRouter(broadcastSync = () => {}, sseClients = new Set(), getSt
       const updatedAt = Date.now();
       if (base64Data) {
         await db.pool.query(
-          `INSERT INTO banners (id, section, slot_index, title, image_mime, image_data, link_type, link_target, updated_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-           ON CONFLICT (section, slot_index) DO UPDATE SET
+          `INSERT INTO banners (id, section, slot_index, province, city, region, title, image_mime, image_data, link_type, link_target, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+           ON CONFLICT (id) DO UPDATE SET
+             province = EXCLUDED.province,
+             city = EXCLUDED.city,
+             region = EXCLUDED.region,
              title = EXCLUDED.title,
              image_mime = EXCLUDED.image_mime,
              image_data = EXCLUDED.image_data,
              link_type = EXCLUDED.link_type,
              link_target = EXCLUDED.link_target,
              updated_at = EXCLUDED.updated_at`,
-          [id, section, slotIndex, title, imageMime, base64Data, linkType, linkTarget, updatedAt]
+          [id, section, slotIndex, loc.province, loc.city, loc.region, title, imageMime, base64Data, linkType, linkTarget, updatedAt]
         );
       } else {
         const upd = await db.pool.query(
           `UPDATE banners
-           SET title = $1, link_type = $2, link_target = $3, updated_at = $4
-           WHERE id = $5`,
-          [title, linkType, linkTarget, updatedAt, id]
+           SET province = $1, city = $2, region = $3, title = $4, link_type = $5, link_target = $6, updated_at = $7
+           WHERE id = $8`,
+          [loc.province, loc.city, loc.region, title, linkType, linkTarget, updatedAt, id]
         );
         if (upd.rowCount === 0) {
           return res.status(400).json({ error: 'ابتدا یک تصویر برای این کاشی انتخاب کنید.' });
@@ -1060,7 +1095,7 @@ function createApiRouter(broadcastSync = () => {}, sseClients = new Set(), getSt
       }
 
       const { rows } = await db.pool.query(
-        "SELECT id, section, slot_index, title, (image_data <> '') AS has_img, image_mime, link_type, link_target, updated_at FROM banners WHERE id = $1",
+        "SELECT id, section, slot_index, province, city, region, title, (image_data <> '') AS has_img, image_mime, link_type, link_target, updated_at FROM banners WHERE id = $1",
         [id]
       );
       broadcastSync(['banners']);
@@ -2103,5 +2138,7 @@ function createApiRouter(broadcastSync = () => {}, sseClients = new Set(), getSt
 module.exports = {
   createApiRouter,
   canAccessForumBoard,
-  buildStateEtag
+  buildStateEtag,
+  normalizeBannerLocation,
+  buildBannerId
 };

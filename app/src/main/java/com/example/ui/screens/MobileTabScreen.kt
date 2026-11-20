@@ -87,7 +87,9 @@ fun MobileTabScreen(
 ) {
     val mv = state.session.mobileView
     val uriHandler = LocalUriHandler.current
-    val mobileBanners = remember(state.db.banners) { state.bannersForSection("mobile") }
+    val mobileBanners = remember(state.db.banners, state.session.province, state.session.city, state.session.region) {
+        state.bannersForSection("mobile")
+    }
     val storesById = remember(state.db.stores) {
         state.db.stores.associateBy { it.id }
     }
@@ -486,18 +488,19 @@ fun MobileTabScreen(
                             }
                         }
 
-                        if (mobileBanners.isNotEmpty()) {
-                            item(key = "mobile_promo_banners") {
-                                BazmoPromoBannerGrid(
-                                    banners = mobileBanners,
-                                    onBannerClick = { banner ->
-                                        viewModel.openPromoBanner(banner) { url ->
-                                            runCatching { uriHandler.openUri(url) }
-                                                .onFailure { viewModel.showToast("امکان باز کردن لینک وجود ندارد") }
-                                        }
+                        item(key = "mobile_promo_banners") {
+                            BazmoPromoBannerGrid(
+                                slots = mobileBanners,
+                                onBannerClick = { banner ->
+                                    viewModel.openPromoBanner(banner) { url ->
+                                        runCatching { uriHandler.openUri(url) }
+                                            .onFailure { viewModel.showToast("امکان باز کردن لینک وجود ندارد") }
                                     }
-                                )
-                            }
+                                },
+                                onEmptySlotClick = {
+                                    viewModel.showToast("اینجا جای تبلیغات شماست؛ جهت ثبت بنر با مدیریت بازمو تماس بگیرید.")
+                                }
+                            )
                         }
 
                         item(key = "mobile_brand_strip") {

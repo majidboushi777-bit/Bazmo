@@ -149,6 +149,7 @@ data class AdminUserFilter(
     val search: String = "",
     val tier: String = "همه",
     val province: String = "همه استان‌ها",
+    val city: String = "همه شهرها",
     val statusFilter: String = "همه"
 )
 
@@ -250,8 +251,57 @@ data class BazmoUiState(
     fun chatThreadsForAd(adId: String): List<ChatThreadEntity> =
         db.chatThreads.filter { it.adId == adId }
 
-    fun bannersForSection(section: String): List<BannerEntity> =
-        db.banners.filter { it.section == section && it.hasImage }.sortedBy { it.slotIndex }
+    fun bannersForSection(section: String): List<BannerEntity?> =
+        resolvePromoBannerSlots(
+            banners = db.banners,
+            section = section,
+            province = session.province,
+            city = session.city,
+            region = session.region
+        )
+}
+
+fun resolvePromoBannerSlots(
+    banners: List<BannerEntity>,
+    section: String,
+    province: String,
+    city: String,
+    region: String
+): List<BannerEntity?> {
+    val active = banners.filter { it.section == section && it.hasImage }
+    val provAll = BazmoLocations.isAllScope(province)
+    val cityAll = BazmoLocations.isAllScope(city)
+    val regAll = BazmoLocations.isAllScope(region)
+    val normProv = BazmoLocations.normalizeZwnj(province)
+    val normCity = BazmoLocations.normalizeZwnj(city)
+    val normReg = BazmoLocations.normalizeZwnj(region)
+
+    return (0..3).map { slotIdx ->
+        val candidates = active.filter { it.slotIndex == slotIdx }
+        if (candidates.isEmpty()) return@map null
+        if (!provAll && !cityAll && !regAll) {
+            candidates.find { b ->
+                BazmoLocations.normalizeZwnj(b.province) == normProv &&
+                    BazmoLocations.normalizeZwnj(b.city) == normCity &&
+                    BazmoLocations.normalizeZwnj(b.region) == normReg
+            }?.let { return@map it }
+        }
+        if (!provAll && !cityAll) {
+            candidates.find { b ->
+                BazmoLocations.normalizeZwnj(b.province) == normProv &&
+                    BazmoLocations.normalizeZwnj(b.city) == normCity &&
+                    BazmoLocations.isAllScope(b.region)
+            }?.let { return@map it }
+        }
+        if (!provAll) {
+            candidates.find { b ->
+                BazmoLocations.normalizeZwnj(b.province) == normProv &&
+                    BazmoLocations.isAllScope(b.city) &&
+                    BazmoLocations.isAllScope(b.region)
+            }?.let { return@map it }
+        }
+        candidates.find { b -> BazmoLocations.isAllScope(b.province) }
+    }
 }
 
 class BazmoViewModel(
@@ -1471,7 +1521,9 @@ class BazmoViewModel(
     fun refreshAdminUsers() {
         if (!sessionState.value.isAdminUser) return
         viewModelScope.launch {
-            repository.fetchUsersForAdmin()
+            repository.fetchUsersForAdmin().onSuccess { users ->
+                dbState.update { it.copy(users = users) }
+            }
         }
     }
 
@@ -1656,31 +1708,54 @@ class BazmoViewModel(
     fun adminUpsertBanner(
         section: String,
         slotIndex: Int,
+        province: String = "همه استان‌ها",
+        city: String = "همه شهرها",
+        region: String = "همه مناطق",
         title: String,
         linkType: String,
         linkTarget: String,
         imageMime: String,
         imageData: String,
         keepExistingImage: Boolean,
-        onSuccess: () -> Unit = {}
+        onSuccess: (BannerEntity?) -> Unit = {}
     ) {
         if (imageData.isBlank() && !keepExistingImage) {
             showToast("لطفاً تصویر بنر را انتخاب کنید")
             return
         }
+        val normProv = if (BazmoLocations.isAllScope(province)) "همه استان‌ها" else province.trim()
+        val normCity = if (BazmoLocations.isAllScope(normProv) || BazmoLocations.isAllScope(city)) "همه شهرها" else city.trim()
+        val normReg = if (BazmoLocations.isAllScope(normProv) || BazmoLocations.isAllScope(normCity) || BazmoLocations.isAllScope(region)) "همه مناطق" else region.trim()
         viewModelScope.launch {
             repository.upsertBannerByAdmin(
                 section = section,
                 slotIndex = slotIndex,
+                province = normProv,
+                city = normCity,
+                region = normReg,
                 title = title,
                 linkType = linkType,
                 linkTarget = linkTarget,
                 imageMime = imageMime,
                 imageData = imageData,
                 keepExistingImage = keepExistingImage
-            ).onSuccess {
+            ).onSuccess { savedBanner ->
+                if (savedBanner != null) {
+                    dbState.update { cur ->
+                        val filtered = cur.banners.filterNot {
+                            it.id == savedBanner.id || (
+                                it.section == savedBanner.section &&
+                                    it.slotIndex == savedBanner.slotIndex &&
+                                    BazmoLocations.normalizeZwnj(it.province) == BazmoLocations.normalizeZwnj(savedBanner.province) &&
+                                    BazmoLocations.normalizeZwnj(it.city) == BazmoLocations.normalizeZwnj(savedBanner.city) &&
+                                    BazmoLocations.normalizeZwnj(it.region) == BazmoLocations.normalizeZwnj(savedBanner.region)
+                                )
+                        }
+                        cur.copy(banners = filtered + savedBanner)
+                    }
+                }
                 showToast("بنر تبلیغاتی با موفقیت ذخیره شد")
-                onSuccess()
+                onSuccess(savedBanner)
             }.onFailure { err ->
                 showToast(err.message ?: "خطا در ذخیره بنر تبلیغاتی")
             }

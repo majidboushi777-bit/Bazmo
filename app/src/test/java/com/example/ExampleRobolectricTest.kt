@@ -32,9 +32,11 @@ import com.example.data.filterByLocation
 import com.example.data.formatToman
 import com.example.data.isValidEmailFormat
 import com.example.data.normalizeEmail
+import com.example.viewmodel.AdminUserFilter
 import com.example.viewmodel.BazmoModal
 import com.example.viewmodel.BazmoSessionState
 import com.example.viewmodel.BazmoUiState
+import com.example.viewmodel.resolvePromoBannerSlots
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -581,25 +583,103 @@ class ExampleRobolectricTest {
     }
 
     @Test
-    fun `promo banners filter by section, require image, and sort by slotIndex`() {
+    fun `promo banners resolve 4 fixed slots with region-city-province-nationwide fallback`() {
         val banners = listOf(
-            BannerEntity(id = "b2", section = "mobile", slotIndex = 2, title = "B2", hasImage = true, imageUrl = "/api/banners/b2/image"),
-            BannerEntity(id = "b0", section = "mobile", slotIndex = 0, title = "B0", hasImage = true, imageUrl = "/api/banners/b0/image"),
-            BannerEntity(id = "b1_empty", section = "mobile", slotIndex = 1, title = "Empty", hasImage = false, imageUrl = ""),
-            BannerEntity(id = "b_hw", section = "hw", slotIndex = 0, title = "HW0", hasImage = true, imageUrl = "/api/banners/hw0/image")
+            BannerEntity(
+                id = "b_nat_0",
+                section = "mobile",
+                slotIndex = 0,
+                province = BazmoLocations.ALL_COUNTRY,
+                city = BazmoLocations.ALL_CITIES,
+                region = BazmoLocations.ALL_REGIONS,
+                title = "Nationwide 0",
+                hasImage = true,
+                imageUrl = "/api/banners/b_nat_0/image"
+            ),
+            BannerEntity(
+                id = "b_prov_0",
+                section = "mobile",
+                slotIndex = 0,
+                province = "تهران",
+                city = BazmoLocations.ALL_CITIES,
+                region = BazmoLocations.ALL_REGIONS,
+                title = "Tehran Prov 0",
+                hasImage = true,
+                imageUrl = "/api/banners/b_prov_0/image"
+            ),
+            BannerEntity(
+                id = "b_reg_0",
+                section = "mobile",
+                slotIndex = 0,
+                province = "تهران",
+                city = "تهران",
+                region = "علاءالدین و جمهوری",
+                title = "Alaeddin 0",
+                hasImage = true,
+                imageUrl = "/api/banners/b_reg_0/image"
+            ),
+            BannerEntity(
+                id = "b_nat_2",
+                section = "mobile",
+                slotIndex = 2,
+                province = BazmoLocations.ALL_COUNTRY,
+                city = BazmoLocations.ALL_CITIES,
+                region = BazmoLocations.ALL_REGIONS,
+                title = "Nationwide 2",
+                hasImage = true,
+                imageUrl = "/api/banners/b_nat_2/image"
+            ),
+            BannerEntity(
+                id = "b1_empty",
+                section = "mobile",
+                slotIndex = 1,
+                title = "Empty",
+                hasImage = false,
+                imageUrl = ""
+            ),
+            BannerEntity(
+                id = "b_hw",
+                section = "hw",
+                slotIndex = 0,
+                title = "HW0",
+                hasImage = true,
+                imageUrl = "/api/banners/hw0/image"
+            )
         )
-        val uiState = BazmoUiState(
-            db = BazmoDbState(banners = banners)
+
+        // Exact region match beats province & nationwide on slot 0, falls back to nationwide on slot 2, null on empty slots 1 & 3
+        val alaeddinSlots = resolvePromoBannerSlots(
+            banners = banners,
+            section = "mobile",
+            province = "تهران",
+            city = "تهران",
+            region = "علاءالدین و جمهوری"
         )
-        val mobBanners = uiState.bannersForSection("mobile")
-        assertEquals(listOf("b0", "b2"), mobBanners.map { it.id })
-        val hwBanners = uiState.bannersForSection("hw")
-        assertEquals(listOf("b_hw"), hwBanners.map { it.id })
-        assertTrue(uiState.bannersForSection("acc").isEmpty())
+        assertEquals(4, alaeddinSlots.size)
+        assertEquals(listOf("b_reg_0", null, "b_nat_2", null), alaeddinSlots.map { it?.id })
+
+        // Different region in Tehran falls back to province-wide on slot 0
+        val shahriarSlots = resolvePromoBannerSlots(
+            banners = banners,
+            section = "mobile",
+            province = "تهران",
+            city = "شهریار",
+            region = "مرکز شهر"
+        )
+        assertEquals(listOf("b_prov_0", null, "b_nat_2", null), shahriarSlots.map { it?.id })
+
+        // Other province falls back to nationwide
+        val shirazUiState = BazmoUiState(
+            db = BazmoDbState(banners = banners),
+            session = BazmoSessionState(province = "فارس", city = "شیراز", region = "ملاصدرا")
+        )
+        assertEquals(listOf("b_nat_0", null, "b_nat_2", null), shirazUiState.bannersForSection("mobile").map { it?.id })
+        assertEquals(listOf("b_hw", null, null, null), shirazUiState.bannersForSection("hw").map { it?.id })
+        assertEquals(listOf(null, null, null, null), shirazUiState.bannersForSection("acc"))
     }
 
     @Test
-    fun `zwnj normalization matches role and province strings reliably`() {
+    fun `zwnj and digit normalization plus admin filter all-scope work reliably`() {
         assertEquals(
             BazmoLocations.normalizeZwnj("نرم\u200cافزارکار"),
             BazmoLocations.normalizeZwnj("نرم افزارکار")
@@ -608,5 +688,14 @@ class ExampleRobolectricTest {
             BazmoLocations.normalizeZwnj("قطعه\u200cفروش"),
             BazmoLocations.normalizeZwnj("قطعه فروش")
         )
+        assertEquals(
+            BazmoLocations.normalizeZwnj("۰۹۱۲۳۴۵۶۷۸۹"),
+            BazmoLocations.normalizeZwnj("09123456789")
+        )
+        assertTrue(BazmoLocations.isAllScope("همه نقش\u200cها"))
+        assertTrue(BazmoLocations.isAllScope("همه وضعیت\u200cها"))
+        assertTrue(BazmoLocations.isAllScope("کل کشور"))
+        assertTrue(BazmoLocations.isAllScope("همه شهرهای استان"))
+        assertEquals("همه شهرها", AdminUserFilter().city)
     }
 }

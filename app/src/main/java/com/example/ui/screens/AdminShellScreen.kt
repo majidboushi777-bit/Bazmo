@@ -815,19 +815,32 @@ private fun AdminUsersTab(state: BazmoUiState, viewModel: BazmoViewModel) {
 
     val uf = state.session.adminUserFilter
     val filteredUsers = remember(state.db.users, uf) {
+        val normSearch = BazmoLocations.normalizeZwnj(uf.search.lowercase())
+        val rawSearch = uf.search.trim().lowercase()
         val normFilterTier = BazmoLocations.normalizeZwnj(uf.tier)
         val normFilterProv = BazmoLocations.normalizeZwnj(uf.province)
+        val normFilterCity = BazmoLocations.normalizeZwnj(uf.city)
+        val provAll = BazmoLocations.isAllScope(uf.province)
+        val cityAll = provAll || BazmoLocations.isAllScope(uf.city)
+        val tierAll = BazmoLocations.isAllScope(uf.tier)
+        val statusAll = BazmoLocations.isAllScope(uf.statusFilter)
         state.db.users.filter { u ->
-            (uf.search.isBlank() ||
-                u.fullName.contains(uf.search, ignoreCase = true) ||
-                u.email.contains(uf.search, ignoreCase = true) ||
-                u.phone.contains(uf.search, ignoreCase = true)) &&
-                (uf.tier == "همه" || BazmoLocations.normalizeZwnj(u.tier) == normFilterTier) &&
-                (BazmoLocations.isAllScope(uf.province) ||
-                    BazmoLocations.normalizeZwnj(u.province) == normFilterProv) &&
-                (uf.statusFilter == "همه" ||
-                    (uf.statusFilter == "فعال" && u.active) ||
-                    (uf.statusFilter == "مسدود" && !u.active))
+            val searchOk = normSearch.isBlank() ||
+                BazmoLocations.normalizeZwnj(u.fullName.lowercase()).contains(normSearch) ||
+                BazmoLocations.normalizeZwnj(u.email.lowercase()).contains(normSearch) ||
+                BazmoLocations.normalizeZwnj(u.phone).contains(normSearch) ||
+                BazmoLocations.normalizeZwnj(u.city.lowercase()).contains(normSearch) ||
+                BazmoLocations.normalizeZwnj(u.province.lowercase()).contains(normSearch) ||
+                BazmoLocations.normalizeZwnj(u.tier.lowercase()).contains(normSearch) ||
+                u.fullName.contains(rawSearch, ignoreCase = true) ||
+                u.email.contains(rawSearch, ignoreCase = true)
+            val tierOk = tierAll || BazmoLocations.normalizeZwnj(u.tier) == normFilterTier
+            val provOk = provAll || BazmoLocations.normalizeZwnj(u.province) == normFilterProv
+            val cityOk = cityAll || BazmoLocations.normalizeZwnj(u.city) == normFilterCity
+            val statusOk = statusAll ||
+                (uf.statusFilter == "فعال" && u.active) ||
+                (uf.statusFilter == "مسدود" && !u.active)
+            searchOk && tierOk && provOk && cityOk && statusOk
         }
     }
 
@@ -1090,12 +1103,27 @@ private fun AdminUsersTab(state: BazmoUiState, viewModel: BazmoViewModel) {
             }
 
             item(key = "users_filter_card") {
-                BazmoSectionHeader("لیست کاربران (${filteredUsers.size.toPersianNumber()})")
+                val filterCities = remember(uf.province) {
+                    if (BazmoLocations.isAllScope(uf.province)) listOf("همه شهرها")
+                    else listOf("همه شهرها") + BazmoLocations.citiesFor(uf.province)
+                }
+                val hasActiveFilter = uf.search.isNotBlank() ||
+                    !BazmoLocations.isAllScope(uf.tier) ||
+                    !BazmoLocations.isAllScope(uf.statusFilter) ||
+                    !BazmoLocations.isAllScope(uf.province) ||
+                    !BazmoLocations.isAllScope(uf.city)
+                BazmoSectionHeader(
+                    title = "لیست کاربران (${filteredUsers.size.toPersianNumber()} از ${state.db.users.size.toPersianNumber()})",
+                    actionLabel = if (hasActiveFilter) "پاک کردن فیلتر" else null,
+                    onAction = if (hasActiveFilter) {
+                        { viewModel.updateAdminUserFilter { com.example.viewmodel.AdminUserFilter() } }
+                    } else null
+                )
                 BazmoCard {
                     BazmoSearchBar(
                         value = uf.search,
                         onValueChange = { q -> viewModel.updateAdminUserFilter { it.copy(search = q) } },
-                        placeholder = "جستجوی نام، ایمیل یا تلفن...",
+                        placeholder = "جستجوی نام، ایمیل، تلفن یا شهر...",
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
                     Row(
@@ -1103,7 +1131,7 @@ private fun AdminUsersTab(state: BazmoUiState, viewModel: BazmoViewModel) {
                         modifier = Modifier.padding(bottom = 8.dp)
                     ) {
                         BazmoDropdownSelector(
-                            selectedValue = if (uf.tier == "همه") "همه نقش‌ها" else uf.tier,
+                            selectedValue = if (BazmoLocations.isAllScope(uf.tier)) "همه نقش‌ها" else uf.tier,
                             options = listOf("همه نقش‌ها") + BazmoRoles.ALL_ROLES,
                             onSelect = { choice ->
                                 val t = if (choice == "همه نقش‌ها") "همه" else choice
@@ -1112,7 +1140,7 @@ private fun AdminUsersTab(state: BazmoUiState, viewModel: BazmoViewModel) {
                             modifier = Modifier.weight(1f)
                         )
                         BazmoDropdownSelector(
-                            selectedValue = if (uf.statusFilter == "همه") "همه وضعیت‌ها" else uf.statusFilter,
+                            selectedValue = if (BazmoLocations.isAllScope(uf.statusFilter)) "همه وضعیت‌ها" else uf.statusFilter,
                             options = listOf("همه وضعیت‌ها", "فعال", "مسدود"),
                             onSelect = { choice ->
                                 val st = if (choice == "همه وضعیت‌ها") "همه" else choice
@@ -1121,11 +1149,22 @@ private fun AdminUsersTab(state: BazmoUiState, viewModel: BazmoViewModel) {
                             modifier = Modifier.weight(1f)
                         )
                     }
-                    BazmoDropdownSelector(
-                        selectedValue = uf.province,
-                        options = listOf("همه استان‌ها", BazmoLocations.ALL_COUNTRY) + provs,
-                        onSelect = { p -> viewModel.updateAdminUserFilter { it.copy(province = p) } }
-                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        BazmoDropdownSelector(
+                            selectedValue = uf.province,
+                            options = listOf("همه استان‌ها", BazmoLocations.ALL_COUNTRY) + provs,
+                            onSelect = { p -> viewModel.updateAdminUserFilter { it.copy(province = p, city = "همه شهرها") } },
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (!BazmoLocations.isAllScope(uf.province)) {
+                            BazmoDropdownSelector(
+                                selectedValue = uf.city,
+                                options = filterCities,
+                                onSelect = { c -> viewModel.updateAdminUserFilter { it.copy(city = c) } },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
                 }
             }
 

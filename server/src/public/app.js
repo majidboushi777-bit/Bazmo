@@ -128,12 +128,17 @@
     adminUserTier: 'همه نقش‌ها',
     adminUserStatus: 'all',
     adminUserProvince: 'همه استان‌ها',
+    adminUserCity: 'همه شهرها',
     adminUserSubTab: 'users', // 'users' | 'requests'
     adminAdsTile: 'hw', // 'hw' | 'mobile' | 'acc' | 'stores' | 'desks' | 'tutorials' | 'boxes' | 'banners'
     adminAdsSearch: '',
     adminAdsFilter: 'all', // 'all' | 'pending'
     adminAdsShowAll: false,
     adminBannerSection: 'mobile', // 'mobile' | 'software' | 'acc' | 'hw'
+    adminBannerProv: 'همه استان‌ها',
+    adminBannerCity: 'همه شهرها',
+    adminBannerRegion: 'همه مناطق',
+    adminBannerDrafts: {},
     adminNotifProv: 'همه استان‌ها',
     adminNotifCity: 'همه شهرها',
     adminNotifRegion: 'همه مناطق',
@@ -196,8 +201,14 @@
       : `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3a9 9 0 109 9c0-.46-.04-.92-.1-1.36a5.389 5.389 0 01-4.4 2.26 5.403 5.403 0 01-3.14-9.8c-.44-.06-.9-.1-1.36-.1z"/></svg>`;
   }
 
-  function normalizeZwnj(val) {
+  function toEnglishDigits(val) {
     return String(val || '')
+      .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+      .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
+  }
+
+  function normalizeZwnj(val) {
+    return toEnglishDigits(val)
       .replace(/\u200c/g, '')
       .replace(/ي/g, 'ی')
       .replace(/ك/g, 'ک')
@@ -209,12 +220,18 @@
     const n = normalizeZwnj(val);
     return (
       !n ||
+      n === 'all' ||
       n === 'همه' ||
       n === 'همهاستانها' ||
       n === 'همهشهرها' ||
+      n === 'همهشهرهایاستان' ||
       n === 'همهمناطق' ||
+      n === 'همهمناطقشهر' ||
       n === 'همهبخشها' ||
+      n === 'همهنقشها' ||
+      n === 'همهوضعیتها' ||
       n === 'همهکشور' ||
+      n === 'کلکشور' ||
       n === 'سراسرکشور'
     );
   }
@@ -1314,15 +1331,94 @@
     });
   }
 
+  function normalizeBannerScope(prov, city, reg) {
+    if (isAllScope(prov)) {
+      return { province: 'همه استان‌ها', city: 'همه شهرها', region: 'همه مناطق' };
+    }
+    if (isAllScope(city)) {
+      return { province: prov, city: 'همه شهرها', region: 'همه مناطق' };
+    }
+    if (isAllScope(reg)) {
+      return { province: prov, city, region: 'همه مناطق' };
+    }
+    return { province: prov, city, region: reg };
+  }
+
+  function bannerDraftKey(section, slotIdx, loc) {
+    const s = normalizeBannerScope(loc.province, loc.city, loc.region);
+    return `${section}|${slotIdx}|${normalizeZwnj(s.province)}|${isAllScope(s.city) ? 'all' : normalizeZwnj(s.city)}|${isAllScope(s.region) ? 'all' : normalizeZwnj(s.region)}`;
+  }
+
+  function findBannerForExactScope(banners, section, slotIdx, loc) {
+    const target = normalizeBannerScope(loc.province, loc.city, loc.region);
+    return (banners || []).find((b) => {
+      if (b.section !== section || Number(b.slotIndex) !== slotIdx) return false;
+      const bLoc = normalizeBannerScope(b.province, b.city, b.region);
+      return (
+        normalizeZwnj(bLoc.province) === normalizeZwnj(target.province) &&
+        normalizeZwnj(bLoc.city) === normalizeZwnj(target.city) &&
+        normalizeZwnj(bLoc.region) === normalizeZwnj(target.region)
+      );
+    }) || null;
+  }
+
+  function resolvePromoBannerSlots(section) {
+    const active = (state.db?.banners || []).filter((b) => b.section === section && b.hasImage);
+    const uProv = state.province;
+    const uCity = state.city;
+    const uReg = state.region;
+    const provAll = isAllScope(uProv);
+    const cityAll = isAllScope(uCity);
+    const regAll = isAllScope(uReg);
+
+    return [0, 1, 2, 3].map((slotIdx) => {
+      const candidates = active.filter((b) => Number(b.slotIndex) === slotIdx);
+      if (!candidates.length) return null;
+      if (!provAll && !cityAll && !regAll) {
+        const regHit = candidates.find(
+          (b) =>
+            normalizeZwnj(b.province) === normalizeZwnj(uProv) &&
+            normalizeZwnj(b.city) === normalizeZwnj(uCity) &&
+            normalizeZwnj(b.region) === normalizeZwnj(uReg)
+        );
+        if (regHit) return regHit;
+      }
+      if (!provAll && !cityAll) {
+        const cityHit = candidates.find(
+          (b) =>
+            normalizeZwnj(b.province) === normalizeZwnj(uProv) &&
+            normalizeZwnj(b.city) === normalizeZwnj(uCity) &&
+            isAllScope(b.region)
+        );
+        if (cityHit) return cityHit;
+      }
+      if (!provAll) {
+        const provHit = candidates.find(
+          (b) =>
+            normalizeZwnj(b.province) === normalizeZwnj(uProv) &&
+            isAllScope(b.city) &&
+            isAllScope(b.region)
+        );
+        if (provHit) return provHit;
+      }
+      return candidates.find((b) => isAllScope(b.province)) || null;
+    });
+  }
+
   function renderPromoBanners(section) {
-    const banners = (state.db?.banners || [])
-      .filter((b) => b.section === section && b.hasImage)
-      .sort((a, b) => Number(a.slotIndex) - Number(b.slotIndex))
-      .slice(0, 4);
-    if (!banners.length) return '';
+    const slots = resolvePromoBannerSlots(section);
     return `
       <div class="promo-banner-grid">
-        ${banners.map((b) => {
+        ${slots.map((b, slotIdx) => {
+          if (!b) {
+            return `
+              <button type="button" class="promo-banner-tile promo-banner-empty" data-promo-empty="${slotIdx}" aria-label="اینجا جای تبلیغات شماست">
+                <span class="promo-banner-empty-icon">📢</span>
+                <span class="promo-banner-empty-title">اینجا جای تبلیغات شماست</span>
+                <span class="promo-banner-empty-sub">جایگاه تبلیغاتی ${toPersianNum(slotIdx + 1)}</span>
+              </button>
+            `;
+          }
           const tagLabel = b.linkType === 'url' ? '🌐 لینک سایت' : b.linkType === 'store' ? '🏪 فروشگاه' : '';
           const v = b.updatedAt ? `?v=${encodeURIComponent(b.updatedAt)}` : '';
           return `
@@ -2351,13 +2447,32 @@
     }
 
     if (state.adminTab === 'users') {
-      const q = state.adminUserSearch.trim().toLowerCase();
+      const qRaw = state.adminUserSearch.trim().toLowerCase();
+      const qNorm = normalizeZwnj(qRaw);
+      const uProvAll = isAllScope(state.adminUserProvince);
+      const uCities = uProvAll
+        ? ['همه شهرها']
+        : ['همه شهرها', ...Object.keys(LOCATIONS[state.adminUserProvince] || {})];
       const filteredUsers = users.filter((u) => {
-        const searchOk = !q || (u.fullName || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q) || (u.phone || '').includes(q);
+        const searchOk =
+          !qNorm ||
+          normalizeZwnj(u.fullName).includes(qNorm) ||
+          normalizeZwnj(u.email).includes(qNorm) ||
+          normalizeZwnj(u.phone).includes(qNorm) ||
+          normalizeZwnj(u.city).includes(qNorm) ||
+          normalizeZwnj(u.province).includes(qNorm) ||
+          normalizeZwnj(u.tier).includes(qNorm) ||
+          (u.fullName || '').toLowerCase().includes(qRaw) ||
+          (u.email || '').toLowerCase().includes(qRaw);
         const tierOk = isAllScope(state.adminUserTier) || normalizeZwnj(u.tier) === normalizeZwnj(state.adminUserTier);
-        const stOk = state.adminUserStatus === 'all' || (state.adminUserStatus === 'active' && u.active !== false) || (state.adminUserStatus === 'blocked' && u.active === false);
+        const stOk =
+          state.adminUserStatus === 'all' ||
+          isAllScope(state.adminUserStatus) ||
+          (state.adminUserStatus === 'active' && u.active !== false) ||
+          (state.adminUserStatus === 'blocked' && u.active === false);
         const provOk = isAllScope(state.adminUserProvince) || normalizeZwnj(u.province) === normalizeZwnj(state.adminUserProvince);
-        return searchOk && tierOk && stOk && provOk;
+        const cityOk = uProvAll || isAllScope(state.adminUserCity) || normalizeZwnj(u.city) === normalizeZwnj(state.adminUserCity);
+        return searchOk && tierOk && stOk && provOk && cityOk;
       });
       const sortedReqs = [...reqs].sort((a, b) => {
         if (a.status === 'pending' && b.status !== 'pending') return -1;
@@ -2406,11 +2521,11 @@
           </div>
         ` : `
           <div class="row space-between" style="margin-bottom:10px;">
-            <input id="au-search" class="input toolbar-search" placeholder="جستجو بر اساس نام، ایمیل یا تلفن..." value="${esc(state.adminUserSearch)}" />
+            <input id="au-search" class="input toolbar-search" placeholder="جستجو بر اساس نام، ایمیل، تلفن یا شهر..." value="${esc(state.adminUserSearch)}" />
             <div class="row">
               <select id="au-tier" class="select" style="width:auto;">
-                <option value="همه نقش‌ها">همه نقش‌ها</option>
-                ${ALL_ROLES.map((r) => `<option value="${esc(r)}" ${state.adminUserTier === r ? 'selected' : ''}>${esc(r)}</option>`).join('')}
+                <option value="همه نقش‌ها" ${isAllScope(state.adminUserTier) ? 'selected' : ''}>همه نقش‌ها</option>
+                ${ALL_ROLES.map((r) => `<option value="${esc(r)}" ${normalizeZwnj(state.adminUserTier) === normalizeZwnj(r) ? 'selected' : ''}>${esc(r)}</option>`).join('')}
               </select>
               <select id="au-status" class="select" style="width:auto;">
                 <option value="all" ${state.adminUserStatus === 'all' ? 'selected' : ''}>همه وضعیت‌ها</option>
@@ -2422,8 +2537,18 @@
                 <option value="همه کشور" ${state.adminUserProvince === 'همه کشور' ? 'selected' : ''}>همه کشور</option>
                 ${Object.keys(LOCATIONS).map((p) => `<option value="${esc(p)}" ${state.adminUserProvince === p ? 'selected' : ''}>${esc(p)}</option>`).join('')}
               </select>
+              ${!uProvAll ? `
+                <select id="au-city" class="select" style="width:auto;">
+                  ${uCities.map((c) => `<option value="${esc(c)}" ${state.adminUserCity === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}
+                </select>
+              ` : ''}
               <button id="au-add-btn" class="btn btn-primary btn-sm">+ افزودن / ویرایش کاربر</button>
             </div>
+          </div>
+
+          <div class="muted" style="margin-bottom:8px;">
+            نمایش ${toPersianNum(filteredUsers.length)} از ${toPersianNum(users.length)} کاربر
+            ${filteredUsers.length !== users.length ? `<button type="button" id="au-reset-filters-inline" class="btn btn-outline btn-sm" style="margin-right:8px;">پاک کردن فیلترها</button>` : ''}
           </div>
 
           <div class="grid">
@@ -2447,7 +2572,12 @@
                   </div>
                 </div>
               </div>
-            `).join('') || '<div class="card muted">کاربری با فیلتر انتخاب‌شده یافت نشد.</div>'}
+            `).join('') || `
+              <div class="card muted" style="text-align:center;">
+                <div style="margin-bottom:8px;">کاربری با فیلتر انتخاب‌شده یافت نشد.</div>
+                <button type="button" id="au-reset-filters-btn" class="btn btn-outline btn-sm">پاک کردن فیلترها و نمایش همه کاربران</button>
+              </div>
+            `}
           </div>
         `}
       `;
@@ -2545,37 +2675,112 @@
           { id: 'hw', label: '🔧 بخش سخت‌افزار' }
         ];
         const curSec = state.adminBannerSection || 'mobile';
+        const curScope = normalizeBannerScope(state.adminBannerProv, state.adminBannerCity, state.adminBannerRegion);
+        const curProvAll = isAllScope(curScope.province);
+        const bCities = curProvAll ? ['همه شهرها'] : ['همه شهرها', ...Object.keys(LOCATIONS[curScope.province] || {})];
+        const bRegions = (curProvAll || isAllScope(curScope.city))
+          ? ['همه مناطق']
+          : (LOCATIONS[curScope.province]?.[curScope.city] || ['همه مناطق']);
         const approvedStores = stores.filter((s) => s.status === 'approved');
+        const configuredScopesMap = new Map();
+        banners.filter((b) => b.section === curSec && b.hasImage).forEach((b) => {
+          const bl = normalizeBannerScope(b.province, b.city, b.region);
+          const sKey = `${bl.province}|${bl.city}|${bl.region}`;
+          const label = isAllScope(bl.province)
+            ? '🌍 کل کشور'
+            : isAllScope(bl.city)
+              ? `📍 استان ${bl.province}`
+              : isAllScope(bl.region)
+                ? `📍 ${bl.province} · ${bl.city}`
+                : `📍 ${bl.city} (${bl.region})`;
+          const prev = configuredScopesMap.get(sKey) || { ...bl, label, count: 0 };
+          prev.count += 1;
+          configuredScopesMap.set(sKey, prev);
+        });
+        const activeScopeLabel = isAllScope(curScope.province)
+          ? '🌍 کل کشور (نمایش در سراسر ایران)'
+          : isAllScope(curScope.city)
+            ? `📍 استان ${curScope.province} (تمام شهرها)`
+            : isAllScope(curScope.region)
+              ? `📍 ${curScope.province} ← شهر ${curScope.city} (تمام مناطق)`
+              : `📍 ${curScope.province} ← ${curScope.city} ← ${curScope.region}`;
+
         sectionBodyHtml = `
           <div class="section-header-title">
             <span>🖼️ مدیریت ۴ کاشی بنر تبلیغاتی هر بخش</span>
-            <span class="muted">با کلیک کاربر روی بنر به سایت یا فروشگاه هدف هدایت می‌شود</span>
+            <span class="muted">تعیین جداگانه برای کل کشور، استان، شهر یا منطقه</span>
           </div>
-          <div class="sub-tabs" style="margin-bottom:12px;">
+          <div class="sub-tabs" style="margin-bottom:10px;">
             ${secLabels.map((s) => `<button type="button" class="sub-tab ${curSec === s.id ? 'active' : ''}" data-banner-sec="${esc(s.id)}">${esc(s.label)}</button>`).join('')}
+          </div>
+          <div class="card" style="margin-bottom:12px;">
+            <div class="row space-between" style="margin-bottom:8px;">
+              <strong>🎯 محدوده جغرافیایی بنرها</strong>
+              <button type="button" id="banner-scope-all-btn" class="btn btn-sm ${curProvAll ? 'btn-primary' : 'btn-outline'}">🌍 کل کشور</button>
+            </div>
+            <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">
+              <select id="banner-scope-prov" class="select">
+                <option value="همه استان‌ها" ${curProvAll ? 'selected' : ''}>همه استان‌ها (کل کشور)</option>
+                ${Object.keys(LOCATIONS).map((p) => `<option value="${esc(p)}" ${curScope.province === p ? 'selected' : ''}>استان ${esc(p)}</option>`).join('')}
+              </select>
+              <select id="banner-scope-city" class="select" ${curProvAll ? 'disabled' : ''}>
+                ${bCities.map((c) => `<option value="${esc(c)}" ${curScope.city === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}
+              </select>
+              <select id="banner-scope-region" class="select" ${curProvAll || isAllScope(curScope.city) ? 'disabled' : ''}>
+                ${bRegions.map((r) => `<option value="${esc(r)}" ${curScope.region === r ? 'selected' : ''}>${esc(r)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="muted" style="margin-top:8px;">محدوده در حال ویرایش: <strong>${esc(activeScopeLabel)}</strong></div>
+            ${configuredScopesMap.size > 0 ? `
+              <div class="banner-scope-pill-row">
+                ${Array.from(configuredScopesMap.values()).map((sc) => {
+                  const isCur = sc.province === curScope.province && sc.city === curScope.city && sc.region === curScope.region;
+                  return `<button type="button" class="btn btn-sm ${isCur ? 'btn-primary' : 'btn-outline'}" data-jump-banner-scope="${esc(sc.province)}|${esc(sc.city)}|${esc(sc.region)}">${esc(sc.label)} (${toPersianNum(sc.count)})</button>`;
+                }).join('')}
+              </div>
+            ` : ''}
           </div>
           <div class="grid">
             ${[0, 1, 2, 3].map((slotIdx) => {
-              const existing = banners.find((b) => b.section === curSec && Number(b.slotIndex) === slotIdx);
-              const lType = existing?.linkType || 'none';
+              const existing = findBannerForExactScope(banners, curSec, slotIdx, curScope);
+              const dKey = bannerDraftKey(curSec, slotIdx, curScope);
+              const draft = state.adminBannerDrafts[dKey] || {};
+              const hasDraftImg = Boolean(draft.previewUrl && draft.imageBase64);
+              const curTitle = draft.title !== undefined ? draft.title : (existing?.title || '');
+              const lType = draft.linkType !== undefined ? draft.linkType : (existing?.linkType || 'none');
+              const curLinkTarget = draft.linkTarget !== undefined ? draft.linkTarget : (existing?.linkTarget || '');
               return `
                 <div class="card">
                   <div class="row space-between" style="margin-bottom:8px;">
                     <strong>بنر شماره ${toPersianNum(slotIdx + 1)}</strong>
-                    ${existing?.hasImage ? `<span class="badge badge-green">تصویر فعال</span>` : `<span class="badge badge-gold">خالی</span>`}
+                    ${hasDraftImg
+                      ? `<span class="badge badge-gold">تصویر جدید آماده ذخیره</span>`
+                      : existing?.hasImage
+                        ? `<span class="badge badge-green">تصویر فعال</span>`
+                        : `<span class="badge badge-blue">خالی</span>`}
                   </div>
-                  ${existing?.hasImage ? `
+                  ${hasDraftImg ? `
+                    <img src="${draft.previewUrl}"
+                         alt="پیش‌نمایش بنر جدید ${slotIdx + 1}"
+                         style="width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:12px;margin-bottom:8px;border:1.5px solid var(--navy);" />
+                  ` : existing?.hasImage ? `
                     <img src="/api/banners/${encodeURIComponent(existing.id)}/image?v=${encodeURIComponent(existing.updatedAt || 0)}"
                          alt="پیش‌نمایش بنر ${slotIdx + 1}"
                          style="width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:12px;margin-bottom:8px;border:1px solid var(--border);" />
-                  ` : ''}
+                  ` : `
+                    <div class="promo-banner-tile promo-banner-empty" style="margin-bottom:8px;cursor:default;">
+                      <span class="promo-banner-empty-icon">📢</span>
+                      <span class="promo-banner-empty-title">اینجا جای تبلیغات شماست</span>
+                      <span class="promo-banner-empty-sub">هنوز تصویری برای این محدوده بارگذاری نشده است</span>
+                    </div>
+                  `}
                   <div class="form-group">
                     <label class="form-label">انتخاب تصویر جدید (PNG / JPG / WebP)</label>
                     <input type="file" accept="image/*" class="input" data-banner-file="${slotIdx}" id="banner-file-${slotIdx}" />
                   </div>
                   <div class="form-group">
                     <label class="form-label">عنوان روی کاشی (اختیاری)</label>
-                    <input id="banner-title-${slotIdx}" class="input" placeholder="مثلاً جشنواره تعویض ال‌سی‌دی..." value="${esc(existing?.title || '')}" />
+                    <input id="banner-title-${slotIdx}" data-banner-title="${slotIdx}" class="input" placeholder="مثلاً جشنواره تعویض ال‌سی‌دی..." value="${esc(curTitle)}" />
                   </div>
                   <div class="form-group">
                     <label class="form-label">عملیات هنگام کلیک روی بنر</label>
@@ -2587,17 +2792,17 @@
                   </div>
                   <div class="form-group" id="banner-url-wrap-${slotIdx}" style="display:${lType === 'url' ? 'block' : 'none'};">
                     <label class="form-label">آدرس سایت (https://...)</label>
-                    <input id="banner-url-${slotIdx}" class="input" dir="ltr" placeholder="https://example.com" value="${lType === 'url' ? esc(existing?.linkTarget || '') : ''}" />
+                    <input id="banner-url-${slotIdx}" data-banner-url="${slotIdx}" class="input" dir="ltr" placeholder="https://example.com" value="${lType === 'url' ? esc(curLinkTarget) : ''}" />
                   </div>
                   <div class="form-group" id="banner-store-wrap-${slotIdx}" style="display:${lType === 'store' ? 'block' : 'none'};">
                     <label class="form-label">انتخاب فروشگاه هدف در بازمو</label>
-                    <select id="banner-store-${slotIdx}" class="select">
+                    <select id="banner-store-${slotIdx}" data-banner-store="${slotIdx}" class="select">
                       <option value="">-- انتخاب فروشگاه --</option>
-                      ${approvedStores.map((st) => `<option value="${esc(st.id)}" ${lType === 'store' && existing?.linkTarget === st.id ? 'selected' : ''}>${esc(st.name)} (${esc(st.city)})</option>`).join('')}
+                      ${approvedStores.map((st) => `<option value="${esc(st.id)}" ${lType === 'store' && curLinkTarget === st.id ? 'selected' : ''}>${esc(st.name)} (${esc(st.city)})</option>`).join('')}
                     </select>
                   </div>
                   <div class="row space-between">
-                    ${existing ? `<button type="button" class="btn btn-danger btn-sm" data-del-banner="${esc(existing.id)}">حذف بنر</button>` : '<span></span>'}
+                    ${existing ? `<button type="button" class="btn btn-danger btn-sm" data-del-banner="${esc(existing.id)}" data-del-dkey="${esc(dKey)}">حذف بنر</button>` : '<span></span>'}
                     <button type="button" class="btn btn-primary btn-sm" data-save-banner="${slotIdx}">💾 ذخیره بنر</button>
                   </div>
                 </div>
@@ -4732,6 +4937,11 @@
         }
       };
     });
+    document.querySelectorAll('[data-promo-empty]').forEach((el) => {
+      el.onclick = () => {
+        toast('اینجا جای تبلیغات شماست؛ جهت ثبت بنر با مدیریت بازمو تماس بگیرید.');
+      };
+    });
 
     // Mobile tab events
     const mobSearch = document.getElementById('mob-search');
@@ -5121,7 +5331,27 @@
     const auStatus = document.getElementById('au-status');
     if (auStatus) auStatus.onchange = (e) => { state.adminUserStatus = e.target.value; render(); };
     const auProv = document.getElementById('au-prov');
-    if (auProv) auProv.onchange = (e) => { state.adminUserProvince = e.target.value; render(); };
+    if (auProv) {
+      auProv.onchange = (e) => {
+        state.adminUserProvince = e.target.value;
+        state.adminUserCity = 'همه شهرها';
+        render();
+      };
+    }
+    const auCity = document.getElementById('au-city');
+    if (auCity) auCity.onchange = (e) => { state.adminUserCity = e.target.value; render(); };
+    const resetUserFiltersFn = () => {
+      state.adminUserSearch = '';
+      state.adminUserTier = 'همه نقش‌ها';
+      state.adminUserStatus = 'all';
+      state.adminUserProvince = 'همه استان‌ها';
+      state.adminUserCity = 'همه شهرها';
+      render();
+    };
+    const auResetBtn = document.getElementById('au-reset-filters-btn');
+    if (auResetBtn) auResetBtn.onclick = resetUserFiltersFn;
+    const auResetInline = document.getElementById('au-reset-filters-inline');
+    if (auResetInline) auResetInline.onclick = resetUserFiltersFn;
     const auAddBtn = document.getElementById('au-add-btn');
     if (auAddBtn) auAddBtn.onclick = openAdminUserModal;
 
@@ -5147,9 +5377,102 @@
     document.querySelectorAll('[data-banner-sec]').forEach((b) => {
       b.onclick = () => { state.adminBannerSection = b.dataset.bannerSec; render(); };
     });
+    const bannerScopeAllBtn = document.getElementById('banner-scope-all-btn');
+    if (bannerScopeAllBtn) {
+      bannerScopeAllBtn.onclick = () => {
+        state.adminBannerProv = 'همه استان‌ها';
+        state.adminBannerCity = 'همه شهرها';
+        state.adminBannerRegion = 'همه مناطق';
+        render();
+      };
+    }
+    const bannerScopeProv = document.getElementById('banner-scope-prov');
+    if (bannerScopeProv) {
+      bannerScopeProv.onchange = (e) => {
+        state.adminBannerProv = e.target.value;
+        state.adminBannerCity = 'همه شهرها';
+        state.adminBannerRegion = 'همه مناطق';
+        render();
+      };
+    }
+    const bannerScopeCity = document.getElementById('banner-scope-city');
+    if (bannerScopeCity) {
+      bannerScopeCity.onchange = (e) => {
+        state.adminBannerCity = e.target.value;
+        state.adminBannerRegion = 'همه مناطق';
+        render();
+      };
+    }
+    const bannerScopeReg = document.getElementById('banner-scope-region');
+    if (bannerScopeReg) {
+      bannerScopeReg.onchange = (e) => {
+        state.adminBannerRegion = e.target.value;
+        render();
+      };
+    }
+    document.querySelectorAll('[data-jump-banner-scope]').forEach((b) => {
+      b.onclick = () => {
+        const [p, c, r] = String(b.dataset.jumpBannerScope || '').split('|');
+        state.adminBannerProv = p || 'همه استان‌ها';
+        state.adminBannerCity = c || 'همه شهرها';
+        state.adminBannerRegion = r || 'همه مناطق';
+        render();
+      };
+    });
+    const getCurBannerScopeAndKey = (slotIdx) => {
+      const curSec = state.adminBannerSection || 'mobile';
+      const curScope = normalizeBannerScope(state.adminBannerProv, state.adminBannerCity, state.adminBannerRegion);
+      const dKey = bannerDraftKey(curSec, slotIdx, curScope);
+      return { curSec, curScope, dKey };
+    };
+    document.querySelectorAll('[data-banner-file]').forEach((inp) => {
+      inp.onchange = async () => {
+        const slotIdx = Number(inp.dataset.bannerFile);
+        const file = inp.files?.[0];
+        if (!file) return;
+        try {
+          const compressed = await compressImageFileToBase64(file);
+          const { dKey } = getCurBannerScopeAndKey(slotIdx);
+          const prev = state.adminBannerDrafts[dKey] || {};
+          state.adminBannerDrafts[dKey] = {
+            ...prev,
+            imageMime: compressed.imageMime,
+            imageBase64: compressed.imageBase64,
+            previewUrl: compressed.previewUrl
+          };
+          render();
+        } catch (err) {
+          toast(err.message || 'خطا در خواندن تصویر');
+        }
+      };
+    });
+    document.querySelectorAll('[data-banner-title]').forEach((inp) => {
+      inp.oninput = (e) => {
+        const { dKey } = getCurBannerScopeAndKey(Number(inp.dataset.bannerTitle));
+        state.adminBannerDrafts[dKey] = { ...(state.adminBannerDrafts[dKey] || {}), title: e.target.value };
+      };
+    });
+    document.querySelectorAll('[data-banner-url]').forEach((inp) => {
+      inp.oninput = (e) => {
+        const { dKey } = getCurBannerScopeAndKey(Number(inp.dataset.bannerUrl));
+        state.adminBannerDrafts[dKey] = { ...(state.adminBannerDrafts[dKey] || {}), linkTarget: e.target.value };
+      };
+    });
+    document.querySelectorAll('[data-banner-store]').forEach((sel) => {
+      sel.onchange = (e) => {
+        const { dKey } = getCurBannerScopeAndKey(Number(sel.dataset.bannerStore));
+        state.adminBannerDrafts[dKey] = { ...(state.adminBannerDrafts[dKey] || {}), linkTarget: e.target.value };
+      };
+    });
     document.querySelectorAll('[data-banner-linktype]').forEach((sel) => {
       sel.onchange = () => {
-        const slotIdx = sel.dataset.bannerLinktype;
+        const slotIdx = Number(sel.dataset.bannerLinktype);
+        const { dKey } = getCurBannerScopeAndKey(slotIdx);
+        state.adminBannerDrafts[dKey] = {
+          ...(state.adminBannerDrafts[dKey] || {}),
+          linkType: sel.value,
+          linkTarget: ''
+        };
         const urlWrap = document.getElementById(`banner-url-wrap-${slotIdx}`);
         const stWrap = document.getElementById(`banner-store-wrap-${slotIdx}`);
         if (urlWrap) urlWrap.style.display = sel.value === 'url' ? 'block' : 'none';
@@ -5159,10 +5482,19 @@
     document.querySelectorAll('[data-save-banner]').forEach((b) => {
       b.onclick = async () => {
         const slotIdx = Number(b.dataset.saveBanner);
-        const curSec = state.adminBannerSection || 'mobile';
-        const existing = (state.db.banners || []).find((x) => x.section === curSec && Number(x.slotIndex) === slotIdx);
+        const { curSec, curScope, dKey } = getCurBannerScopeAndKey(slotIdx);
+        const existing = findBannerForExactScope(state.db?.banners || [], curSec, slotIdx, curScope);
+        const draft = state.adminBannerDrafts[dKey] || {};
         const fileEl = document.getElementById(`banner-file-${slotIdx}`);
         const file = fileEl?.files?.[0];
+        let imageData = draft.imageBase64 || '';
+        let imageMime = draft.imageMime || 'image/jpeg';
+        if (!imageData && file) {
+          const compressed = await compressImageFileToBase64(file);
+          imageData = compressed.imageBase64;
+          imageMime = compressed.imageMime;
+        }
+
         const title = (document.getElementById(`banner-title-${slotIdx}`)?.value || '').trim();
         const linkType = document.getElementById(`banner-linktype-${slotIdx}`)?.value || 'none';
         const linkTarget = linkType === 'url'
@@ -5171,7 +5503,7 @@
             ? (document.getElementById(`banner-store-${slotIdx}`)?.value || '').trim()
             : '';
 
-        if (!file && !existing?.hasImage) {
+        if (!imageData && !existing?.hasImage) {
           return toast('لطفاً ابتدا یک تصویر برای بنر انتخاب کنید.');
         }
         if (linkType === 'url' && !linkTarget) {
@@ -5185,19 +5517,30 @@
           const payload = {
             section: curSec,
             slotIndex: slotIdx,
+            province: curScope.province,
+            city: curScope.city,
+            region: curScope.region,
             title,
             linkType,
             linkTarget,
-            keepExistingImage: !file && Boolean(existing?.hasImage)
+            keepExistingImage: !imageData && Boolean(existing?.hasImage)
           };
-          if (file) {
-            const compressed = await compressImageFileToBase64(file);
-            payload.imageMime = compressed.imageMime;
-            payload.imageBase64 = compressed.imageBase64;
+          if (imageData) {
+            payload.imageMime = imageMime;
+            payload.imageData = imageData;
           }
-          await api('/api/admin/banners', { method: 'POST', body: payload });
+          const res = await api('/api/admin/banners', { method: 'POST', body: payload });
+          if (res?.banner && state.db) {
+            const list = state.db.banners || [];
+            state.db.banners = [
+              ...list.filter((x) => x.id !== res.banner.id),
+              res.banner
+            ];
+          }
+          delete state.adminBannerDrafts[dKey];
           toast(`بنر شماره ${toPersianNum(slotIdx + 1)} ذخیره شد.`);
-          await loadAppState(true, true);
+          render();
+          loadAppState(true, true).catch(() => {});
         } catch (err) {
           toast(err.message || 'خطا در ذخیره بنر');
         } finally {
@@ -5208,9 +5551,16 @@
     document.querySelectorAll('[data-del-banner]').forEach((b) => {
       b.onclick = async () => {
         try {
-          await api(`/api/admin/banners/${encodeURIComponent(b.dataset.delBanner)}`, { method: 'DELETE' });
+          const id = b.dataset.delBanner;
+          const dKey = b.dataset.delDkey;
+          await api(`/api/admin/banners/${encodeURIComponent(id)}`, { method: 'DELETE' });
+          if (state.db) {
+            state.db.banners = (state.db.banners || []).filter((x) => x.id !== id);
+          }
+          if (dKey) delete state.adminBannerDrafts[dKey];
           toast('بنر حذف شد.');
-          await loadAppState(true, true);
+          render();
+          loadAppState(true, true).catch(() => {});
         } catch (err) {
           toast(err.message || 'خطا در حذف بنر');
         }

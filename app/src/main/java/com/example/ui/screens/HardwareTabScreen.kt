@@ -82,7 +82,9 @@ fun HardwareTabScreen(
     val hv = state.session.hwView
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
-    val hwBanners = remember(state.db.banners) { state.bannersForSection("hw") }
+    val hwBanners = remember(state.db.banners, state.session.province, state.session.city, state.session.region) {
+        state.bannersForSection("hw")
+    }
 
     BackHandler(enabled = hv.mode != HardwareSubMode.HOME && hv.mode != HardwareSubMode.FORUM) {
         viewModel.setHwMode(HardwareSubMode.HOME)
@@ -522,18 +524,19 @@ fun HardwareTabScreen(
                                 }
                             }
                         }
-                        if (hwBanners.isNotEmpty()) {
-                            item(key = "hw_promo_banners") {
-                                BazmoPromoBannerGrid(
-                                    banners = hwBanners,
-                                    onBannerClick = { banner ->
-                                        viewModel.openPromoBanner(banner) { url ->
-                                            runCatching { uriHandler.openUri(url) }
-                                                .onFailure { viewModel.showToast("امکان باز کردن لینک وجود ندارد") }
-                                        }
+                        item(key = "hw_promo_banners") {
+                            BazmoPromoBannerGrid(
+                                slots = hwBanners,
+                                onBannerClick = { banner ->
+                                    viewModel.openPromoBanner(banner) { url ->
+                                        runCatching { uriHandler.openUri(url) }
+                                            .onFailure { viewModel.showToast("امکان باز کردن لینک وجود ندارد") }
                                     }
-                                )
-                            }
+                                },
+                                onEmptySlotClick = {
+                                    viewModel.showToast("اینجا جای تبلیغات شماست؛ جهت ثبت بنر با مدیریت بازمو تماس بگیرید.")
+                                }
+                            )
                         }
                         if (hwStores.isNotEmpty()) {
                             item(key = "hw_stores_hdr") {
