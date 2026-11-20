@@ -14,50 +14,50 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 
 private val BazmoLightColorScheme = lightColorScheme(
-    primary = Navy,
+    primary = BrandNavy,
     onPrimary = Color.White,
-    primaryContainer = NavySoft,
-    onPrimaryContainer = NavyDeep,
+    primaryContainer = BrandNavySoft,
+    onPrimaryContainer = BrandNavyDeep,
     secondary = AccentCyan,
     onSecondary = Color.White,
     secondaryContainer = Color(0xFFE0F7FA),
     onSecondaryContainer = Color(0xFF004D5E),
     tertiary = GoldAccent,
     onTertiary = Color(0xFF111827),
-    tertiaryContainer = GoldSoft,
-    onTertiaryContainer = GoldText,
-    background = AppBackground,
-    onBackground = TextPrimary,
-    surface = CardSurface,
-    onSurface = TextPrimary,
-    surfaceVariant = SoftSurface,
-    onSurfaceVariant = TextMuted,
-    outline = BorderLight,
+    tertiaryContainer = Color(0xFFFEF3C7),
+    onTertiaryContainer = Color(0xFF92400E),
+    background = LightBackground,
+    onBackground = LightTextPrimary,
+    surface = LightSurface,
+    onSurface = LightTextPrimary,
+    surfaceVariant = LightSurfaceVariant,
+    onSurfaceVariant = LightTextMuted,
+    outline = LightBorder,
     error = DangerRed,
     onError = Color.White,
-    errorContainer = DangerSoft,
-    onErrorContainer = DangerText
+    errorContainer = Color(0xFFFEE2E2),
+    onErrorContainer = Color(0xFF991B1B)
 )
 
 private val BazmoDarkColorScheme = darkColorScheme(
     primary = Color(0xFF60A5FA),
-    onPrimary = NavyDeep,
-    primaryContainer = Navy,
+    onPrimary = BrandNavyDeep,
+    primaryContainer = BrandNavy,
     onPrimaryContainer = Color(0xFFE2E8F0),
     secondary = AccentCyan,
-    onSecondary = NavyDeep,
+    onSecondary = BrandNavyDeep,
     secondaryContainer = Color(0xFF0E4A5A),
     onSecondaryContainer = Color(0xFFCFFAFE),
     tertiary = GoldAccent,
     onTertiary = Color(0xFF111827),
     tertiaryContainer = Color(0xFF523504),
-    onTertiaryContainer = GoldSoft,
+    onTertiaryContainer = Color(0xFFFEF3C7),
     background = DarkBackground,
-    onBackground = Color(0xFFF1F5F9),
+    onBackground = DarkTextPrimary,
     surface = DarkSurface,
-    onSurface = Color(0xFFF1F5F9),
+    onSurface = DarkTextPrimary,
     surfaceVariant = DarkSurfaceVariant,
-    onSurfaceVariant = Color(0xFF94A3B8),
+    onSurfaceVariant = DarkTextMuted,
     outline = DarkBorder,
     error = Color(0xFFF87171),
     onError = Color(0xFF450A0A),
@@ -78,8 +78,12 @@ fun BazmoTheme(
     content: @Composable () -> Unit
 ) {
     val colorScheme = if (darkTheme) BazmoDarkColorScheme else BazmoLightColorScheme
+    val bazmoColors = if (darkTheme) DarkBazmoColors else LightBazmoColors
 
-    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+    CompositionLocalProvider(
+        LocalLayoutDirection provides LayoutDirection.Rtl,
+        LocalBazmoColors provides bazmoColors
+    ) {
         MaterialTheme(
             colorScheme = colorScheme,
             typography = BazmoTypography,

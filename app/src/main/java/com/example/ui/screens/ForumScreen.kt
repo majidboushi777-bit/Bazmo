@@ -55,9 +55,14 @@ import com.example.ui.components.BazmoSearchBar
 import com.example.ui.components.BazmoSectionHeader
 import com.example.ui.theme.BorderLight
 import com.example.ui.theme.CardSurface
+import com.example.ui.theme.GoldSoft
+import com.example.ui.theme.GoldText
+import com.example.ui.theme.HeaderBgDeep
+import com.example.ui.theme.HeaderBgLight
 import com.example.ui.theme.Navy
 import com.example.ui.theme.NavyDeep
 import com.example.ui.theme.NavySoft
+import com.example.ui.theme.PrimaryFill
 import com.example.ui.theme.RedditDown
 import com.example.ui.theme.RedditDownSoft
 import com.example.ui.theme.RedditUp
@@ -170,7 +175,7 @@ fun ForumScreen(
             ) {
                 Row(
                     modifier = Modifier
-                        .background(Brush.linearGradient(listOf(NavyDeep, Color(0xFF274C85))))
+                        .background(Brush.linearGradient(listOf(HeaderBgDeep, HeaderBgLight)))
                         .padding(14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
@@ -334,7 +339,7 @@ private fun ForumPostCard(
                 modifier = Modifier
                     .size(24.dp)
                     .clip(CircleShape)
-                    .background(Navy),
+                    .background(PrimaryFill),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
@@ -441,7 +446,7 @@ private fun ForumThreadDetail(
                         modifier = Modifier
                             .size(26.dp)
                             .clip(CircleShape)
-                            .background(Navy),
+                            .background(PrimaryFill),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
@@ -586,7 +591,7 @@ private fun CommentItemCard(
             modifier = Modifier
                 .width(3.dp)
                 .padding(top = 4.dp)
-                .background(Color(0xFFCBD5E1), RoundedCornerShape(2.dp))
+                .background(BorderLight, RoundedCornerShape(2.dp))
         )
         Column(
             modifier = Modifier
@@ -671,9 +676,9 @@ private fun CommentItemCard(
             comment.replies.forEach { rep ->
                 Spacer(modifier = Modifier.height(6.dp))
                 Surface(
-                    color = Color(0xFFF1F5F9),
+                    color = SoftSurface,
                     shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, Color(0xFF93C5FD)),
+                    border = BorderStroke(1.dp, NavySoft),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(start = 14.dp)
@@ -723,7 +728,7 @@ fun VotePill(
     onDown: () -> Unit
 ) {
     Surface(
-        color = Color(0xFFF1F5F9),
+        color = SoftSurface,
         shape = RoundedCornerShape(99.dp)
     ) {
         Row(
@@ -778,7 +783,7 @@ private fun ActionChipButton(
     onClick: () -> Unit
 ) {
     Surface(
-        color = if (active) Color(0xFFFEF3C7) else Color(0xFFF1F5F9),
+        color = if (active) GoldSoft else SoftSurface,
         shape = RoundedCornerShape(99.dp),
         modifier = Modifier
             .clip(RoundedCornerShape(99.dp))
@@ -787,7 +792,7 @@ private fun ActionChipButton(
         Text(
             text = text,
             style = MaterialTheme.typography.labelMedium,
-            color = if (active) Color(0xFF92400E) else TextSecondary,
+            color = if (active) GoldText else TextSecondary,
             modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp)
         )
     }

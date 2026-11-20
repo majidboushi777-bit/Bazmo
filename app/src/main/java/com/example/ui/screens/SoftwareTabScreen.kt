@@ -47,6 +47,8 @@ import com.example.ui.components.BazmoSearchBar
 import com.example.ui.components.BazmoSectionHeader
 import com.example.ui.components.BazmoSquareTile
 import com.example.ui.components.BazmoWarrantyBox
+import com.example.ui.theme.HeaderBgDeep
+import com.example.ui.theme.HeaderBgLight
 import com.example.ui.theme.Navy
 import com.example.ui.theme.NavyDeep
 import com.example.ui.theme.NavyLight
@@ -517,7 +519,7 @@ private fun DockTileButton(
     val gradient = if (locked) {
         Brush.linearGradient(listOf(Color(0xFF475569), Color(0xFF64748B)))
     } else {
-        Brush.linearGradient(listOf(NavyDeep, NavyLight))
+        Brush.linearGradient(listOf(HeaderBgDeep, HeaderBgLight))
     }
     Box(
         modifier = modifier

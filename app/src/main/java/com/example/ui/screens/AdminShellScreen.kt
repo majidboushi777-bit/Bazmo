@@ -30,6 +30,8 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Logout
+import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Storefront
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -81,8 +83,14 @@ import com.example.ui.components.BazmoSectionHeader
 import com.example.ui.components.BazmoSoftButton
 import com.example.ui.components.BazmoSuccessButton
 import com.example.ui.components.BazmoWarrantyBox
+import androidx.compose.ui.platform.LocalContext
 import com.example.ui.theme.AppBackground
+import com.example.ui.theme.BazmoThemeManager
+import com.example.ui.theme.BrandNavy
 import com.example.ui.theme.GoldAccent
+import com.example.ui.theme.HeaderBgDeep
+import com.example.ui.theme.HeaderBgLight
+import com.example.ui.theme.LocalBazmoColors
 import com.example.ui.theme.Navy
 import com.example.ui.theme.NavyDeep
 import com.example.ui.theme.NavyLight
@@ -102,7 +110,7 @@ fun AdminShellScreen(
     val adminTabs = remember {
         listOf(
             AdminTab.DASHBOARD to "📊 داشبورد",
-            AdminTab.USERS to "👤 کاربران",
+            AdminTab.USERS to "👥 کاربران",
             AdminTab.NOTIFICATIONS to "🔔 نوتیفیکیشن",
             AdminTab.ADS to "🛡️ آگهی و فروشگاه",
             AdminTab.REQUESTS to "📦 سفارش و استعلام",
@@ -114,6 +122,8 @@ fun AdminShellScreen(
     val pagerState = rememberPagerState(initialPage = selectedTabIndex) { adminTabs.size }
     val tabRowState = rememberLazyListState()
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val isDark = LocalBazmoColors.current.isDark
 
     LaunchedEffect(state.session.adminTab) {
         val targetIdx = tabOrder.indexOf(state.session.adminTab).coerceAtLeast(0)
@@ -204,6 +214,26 @@ fun AdminShellScreen(
                                     .minimumInteractiveComponentSize()
                                     .size(38.dp)
                                     .clip(RoundedCornerShape(11.dp))
+                                    .clickable { BazmoThemeManager.toggleDark(context, isDark) }
+                                    .testTag("theme_toggle_button")
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = if (isDark) Icons.Rounded.LightMode else Icons.Rounded.DarkMode,
+                                        contentDescription = if (isDark) "حالت روشن" else "حالت تاریک",
+                                        tint = GoldAccent,
+                                        modifier = Modifier.size(19.dp)
+                                    )
+                                }
+                            }
+                            Surface(
+                                color = Color.White.copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(11.dp),
+                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.22f)),
+                                modifier = Modifier
+                                    .minimumInteractiveComponentSize()
+                                    .size(38.dp)
+                                    .clip(RoundedCornerShape(11.dp))
                                     .clickable { viewModel.switchRole(AppRole.USER) }
                                     .testTag("switch_user_button")
                             ) {
@@ -259,7 +289,7 @@ fun AdminShellScreen(
                                     label = "adminTabBg"
                                 )
                                 val tabText by animateColorAsState(
-                                    targetValue = if (active) Navy else Color(0xFFD6E4FA),
+                                    targetValue = if (active) BrandNavy else Color(0xFFD6E4FA),
                                     animationSpec = tween(150),
                                     label = "adminTabText"
                                 )
@@ -389,7 +419,7 @@ private fun AdminDashboardTab(state: BazmoUiState, viewModel: BazmoViewModel) {
             ) {
                 Column(
                     modifier = Modifier
-                        .background(Brush.linearGradient(listOf(NavyDeep, NavyLight)))
+                        .background(Brush.linearGradient(listOf(HeaderBgDeep, HeaderBgLight)))
                         .padding(16.dp)
                 ) {
                     Text(
@@ -736,7 +766,7 @@ private fun AdminUsersTab(state: BazmoUiState, viewModel: BazmoViewModel) {
                 }
                 BazmoDropdownSelector(
                     selectedValue = uf.province,
-                    options = listOf("همه استان‌ها") + provs,
+                    options = listOf("همه استان‌ها", BazmoLocations.ALL_COUNTRY) + provs,
                     onSelect = { p -> viewModel.updateAdminUserFilter { it.copy(province = p) } }
                 )
             }
@@ -850,7 +880,7 @@ private fun AdminUsersTab(state: BazmoUiState, viewModel: BazmoViewModel) {
 @Composable
 private fun AdminNotificationsTab(state: BazmoUiState, viewModel: BazmoViewModel) {
     val nf = state.session.adminNotifFilter
-    val provs = listOf("همه استان‌ها") + BazmoLocations.provinces()
+    val provs = listOf("همه استان‌ها", BazmoLocations.ALL_COUNTRY) + BazmoLocations.provinces()
     val cities = if (BazmoLocations.isAllScope(nf.province)) listOf("همه شهرها") else listOf("همه شهرها") + BazmoLocations.citiesFor(nf.province)
     val regions = if (!BazmoLocations.isAllScope(nf.province) && !BazmoLocations.isAllScope(nf.city)) BazmoLocations.regionsFor(nf.province, nf.city) else listOf("همه مناطق")
     val targetCount = state.targetedUsersCount(nf)

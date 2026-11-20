@@ -11,6 +11,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.FragmentActivity
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -73,7 +74,9 @@ import com.example.ui.screens.LoginScreen
 import com.example.ui.screens.UserShellScreen
 import com.example.ui.theme.AppBackground
 import com.example.ui.theme.BazmoTheme
+import com.example.ui.theme.BazmoThemeManager
 import com.example.ui.theme.DangerRed
+import com.example.ui.theme.HeaderBgDeep
 import com.example.ui.theme.Navy
 import com.example.ui.theme.NavyDeep
 import com.example.ui.theme.TextMuted
@@ -100,7 +103,22 @@ class MainActivity : FragmentActivity() {
             )
         )
         setContent {
-            BazmoTheme {
+            val themeMode by BazmoThemeManager.modeFlow(this).collectAsStateWithLifecycle()
+            val isDarkTheme = BazmoThemeManager.resolveDarkTheme(themeMode, isSystemInDarkTheme())
+            LaunchedEffect(isDarkTheme) {
+                enableEdgeToEdge(
+                    statusBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT),
+                    navigationBarStyle = if (isDarkTheme) {
+                        SystemBarStyle.dark(AndroidColor.TRANSPARENT)
+                    } else {
+                        SystemBarStyle.light(
+                            AndroidColor.TRANSPARENT,
+                            AndroidColor.TRANSPARENT
+                        )
+                    }
+                )
+            }
+            BazmoTheme(darkTheme = isDarkTheme) {
                 BazmoAppRoot(
                     openNotificationsPending = openNotificationsPending.value,
                     onConsumeOpenNotifications = { openNotificationsPending.value = false }
@@ -318,7 +336,7 @@ private fun BazmoAuthenticatedRoot(
             ) { data ->
                 Snackbar(
                     shape = RoundedCornerShape(14.dp),
-                    containerColor = NavyDeep,
+                    containerColor = HeaderBgDeep,
                     contentColor = Color.White
                 ) {
                     Text(
@@ -355,7 +373,7 @@ private fun BazmoAuthenticatedRoot(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .background(NavyDeep)
+                                .background(HeaderBgDeep)
                                 .statusBarsPadding()
                         )
                         Box(
@@ -388,7 +406,7 @@ private fun BazmoAuthenticatedRoot(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .background(NavyDeep)
+                                .background(HeaderBgDeep)
                                 .statusBarsPadding()
                         )
                         Box(
@@ -464,7 +482,7 @@ private fun BazmoAuthenticatedRoot(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .background(NavyDeep)
+                                .background(HeaderBgDeep)
                                 .statusBarsPadding()
                         )
                         Box(

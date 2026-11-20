@@ -40,7 +40,9 @@ import androidx.compose.material.icons.outlined.ReceiptLong
 import androidx.compose.material.icons.outlined.ShoppingCart
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.AdminPanelSettings
+import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -100,15 +102,27 @@ import com.example.ui.components.BazmoOutlineButton
 import com.example.ui.components.BazmoPrimaryButton
 import com.example.ui.components.BazmoSoftButton
 import com.example.ui.theme.AppBackground
+import com.example.ui.theme.BazmoThemeManager
 import com.example.ui.theme.BorderLight
+import com.example.ui.theme.BrandNavy
 import com.example.ui.theme.CardSurface
 import com.example.ui.theme.DangerRed
 import com.example.ui.theme.GoldAccent
+import com.example.ui.theme.GoldSoft
+import com.example.ui.theme.GoldText
+import com.example.ui.theme.HeaderBgDeep
+import com.example.ui.theme.HeaderBgLight
+import com.example.ui.theme.HeaderBgMid
+import com.example.ui.theme.LocalBazmoColors
 import com.example.ui.theme.Navy
 import com.example.ui.theme.NavyDeep
 import com.example.ui.theme.NavyLight
 import com.example.ui.theme.NavySoft
+import com.example.ui.theme.PrimaryFill
 import com.example.ui.theme.SoftSurface
+import com.example.ui.theme.SuccessGreen
+import com.example.ui.theme.SuccessSoft
+import com.example.ui.theme.SuccessText
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.viewmodel.AppRole
@@ -128,6 +142,19 @@ fun UserShellScreen(
     val tabs = listOf("موبایل", "نرم\u200cافزار", "جانبی", "سخت\u200cافزار")
     val pagerState = rememberPagerState(initialPage = state.session.activeTab) { tabs.size }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val isDark = LocalBazmoColors.current.isDark
+    var prevProvince by rememberSaveable { mutableStateOf("تهران") }
+    var prevCity by rememberSaveable { mutableStateOf("تهران") }
+    var prevRegion by rememberSaveable { mutableStateOf("علاءالدین و جمهوری") }
+
+    LaunchedEffect(state.session.province, state.session.city, state.session.region) {
+        if (!BazmoLocations.isAllScope(state.session.province)) {
+            prevProvince = state.session.province
+            prevCity = state.session.city
+            prevRegion = state.session.region
+        }
+    }
 
     LaunchedEffect(state.session.activeTab) {
         if (pagerState.currentPage != state.session.activeTab) {
@@ -173,7 +200,7 @@ fun UserShellScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Brush.verticalGradient(listOf(NavyDeep, Navy, NavyLight)))
+                        .background(Brush.verticalGradient(listOf(HeaderBgDeep, HeaderBgMid, HeaderBgLight)))
                         .statusBarsPadding()
                         .padding(horizontal = 14.dp, vertical = 10.dp)
                 ) {
@@ -262,6 +289,14 @@ fun UserShellScreen(
                                 badgeTextColor = Color(0xFF111827),
                                 onClick = { viewModel.openModal(BazmoModal.Cart) },
                                 tag = "cart_button"
+                            )
+                            HeaderActionButton(
+                                icon = if (isDark) Icons.Rounded.LightMode else Icons.Rounded.DarkMode,
+                                contentDescription = if (isDark) "حالت روشن" else "حالت تاریک",
+                                tint = GoldAccent,
+                                badgeCount = 0,
+                                onClick = { BazmoThemeManager.toggleDark(context, isDark) },
+                                tag = "theme_toggle_button"
                             )
                             HeaderActionButton(
                                 icon = Icons.AutoMirrored.Outlined.Logout,
@@ -397,7 +432,7 @@ fun UserShellScreen(
                                     label = "userTabBg"
                                 )
                                 val tabText by animateColorAsState(
-                                    targetValue = if (active) Navy else Color(0xFFD6E4FA),
+                                    targetValue = if (active) BrandNavy else Color(0xFFD6E4FA),
                                     animationSpec = tween(150),
                                     label = "userTabText"
                                 )
@@ -432,6 +467,15 @@ fun UserShellScreen(
                             }
                         }
                     }
+                    Text(
+                        text = "← برای جابه‌جایی بین منوها به راست و چپ بکشید →",
+                        color = Color(0xFFBFDBFE).copy(alpha = 0.85f),
+                        fontSize = 10.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 5.dp)
+                    )
                 }
             }
 
@@ -442,6 +486,7 @@ fun UserShellScreen(
             val ownedStoreCount = remember(state.db.stores, state.currentUid, state.session.isAdminUser) {
                 viewModel.myOwnedStores().size
             }
+            val isAllCountryActive = BazmoLocations.isAllScope(state.session.province)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -450,11 +495,48 @@ fun UserShellScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                Surface(
+                    color = if (isAllCountryActive) GoldAccent else CardSurface,
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.2.dp, if (isAllCountryActive) GoldAccent else BorderLight),
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable {
+                            if (isAllCountryActive) {
+                                val fallbackProv = prevProvince.ifBlank { "تهران" }
+                                val fallbackCity = prevCity.ifBlank { "تهران" }
+                                val fallbackReg = prevRegion.ifBlank { BazmoLocations.ALL_REGIONS }
+                                viewModel.setLocation(fallbackProv, fallbackCity, fallbackReg)
+                            } else {
+                                viewModel.setLocation(
+                                    BazmoLocations.ALL_COUNTRY,
+                                    BazmoLocations.ALL_CITIES,
+                                    BazmoLocations.ALL_REGIONS
+                                )
+                            }
+                        }
+                        .testTag("quick_all_country_button")
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                    ) {
+                        Text(
+                            text = if (isAllCountryActive) "✓ 🌍 همه کشور (سراسر ایران)" else "🌍 همه کشور",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = if (isAllCountryActive) Color(0xFF111827) else NavyDeep,
+                            maxLines = 1
+                        )
+                    }
+                }
+
                 val deskActive = state.session.showDeskRentals
                 Surface(
-                    color = if (deskActive) Navy else CardSurface,
+                    color = if (deskActive) PrimaryFill else CardSurface,
                     shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.2.dp, if (deskActive) Navy else BorderLight),
+                    border = BorderStroke(1.2.dp, if (deskActive) PrimaryFill else BorderLight),
                     modifier = Modifier
                         .heightIn(min = 48.dp)
                         .clip(RoundedCornerShape(12.dp))
@@ -495,7 +577,7 @@ fun UserShellScreen(
                                 text = "🏪 مدیریت فروشگاه من (${ownedStoreCount.toPersianNumber()})",
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.ExtraBold,
-                                color = NavyDeep,
+                                color = if (myStoreActive) Color(0xFF111827) else NavyDeep,
                                 maxLines = 1
                             )
                         }
@@ -630,7 +712,7 @@ private fun HeaderActionButton(
                     .size(16.dp)
                     .clip(CircleShape)
                     .background(badgeColor)
-                    .border(1.5.dp, Navy, CircleShape),
+                    .border(1.5.dp, HeaderBgMid, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
@@ -903,9 +985,9 @@ private fun ModalContent(
                 }
             )
             Surface(
-                color = if (notifGranted) Color(0xFFECFDF5) else Color(0xFFFFFBEB),
+                color = if (notifGranted) SuccessSoft else GoldSoft,
                 shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(1.dp, if (notifGranted) Color(0xFFA7F3D0) else GoldAccent),
+                border = BorderStroke(1.dp, if (notifGranted) SuccessGreen.copy(alpha = 0.45f) else GoldAccent),
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 8.dp)
@@ -919,7 +1001,7 @@ private fun ModalContent(
                         text = if (notifGranted) "✓ سرویس اعلان‌های گوشی فعال است" else "🔔 اعلان‌های سیستم گوشی غیرفعال است",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
-                        color = if (notifGranted) Color(0xFF065F46) else NavyDeep,
+                        color = if (notifGranted) SuccessText else GoldText,
                         modifier = Modifier.weight(1f)
                     )
                     if (!notifGranted) {
@@ -1329,7 +1411,8 @@ private fun ModalContent(
                                 contentAlignment = if (isMe) Alignment.CenterStart else Alignment.CenterEnd
                             ) {
                                 Surface(
-                                    color = if (isMe) Navy else Color(0xFFE2E8F0),
+                                    color = if (isMe) PrimaryFill else CardSurface,
+                                    border = if (isMe) null else BorderStroke(1.dp, BorderLight),
                                     shape = RoundedCornerShape(12.dp),
                                     modifier = Modifier.widthIn(max = 280.dp)
                                 ) {

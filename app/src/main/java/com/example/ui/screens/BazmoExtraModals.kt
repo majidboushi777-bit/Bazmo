@@ -33,8 +33,10 @@ import com.example.ui.components.BazmoInput
 import com.example.ui.components.BazmoPrimaryButton
 import com.example.ui.components.BazmoSoftButton
 import com.example.ui.theme.BorderLight
+import com.example.ui.theme.CardSurface
 import com.example.ui.theme.Navy
 import com.example.ui.theme.NavyDeep
+import com.example.ui.theme.PrimaryFill
 import com.example.ui.theme.SoftSurface
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
@@ -299,7 +301,8 @@ internal fun GenericChatModalBody(
                         contentAlignment = if (isMe) Alignment.CenterStart else Alignment.CenterEnd
                     ) {
                         Surface(
-                            color = if (isMe) Navy else Color(0xFFE2E8F0),
+                            color = if (isMe) PrimaryFill else CardSurface,
+                            border = if (isMe) null else BorderStroke(1.dp, BorderLight),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.widthIn(max = 280.dp)
                         ) {

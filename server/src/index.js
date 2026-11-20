@@ -49,7 +49,12 @@ function createApp(broadcastSync = () => {}, sseClients = new Set(), getStateVer
     express.static(publicDir, {
       maxAge: '1h',
       setHeaders: (res, filePath) => {
-        if (filePath.endsWith('sw.js') || filePath.endsWith('index.html')) {
+        if (
+          filePath.endsWith('sw.js') ||
+          filePath.endsWith('index.html') ||
+          filePath.endsWith('app.js') ||
+          filePath.endsWith('styles.css')
+        ) {
           res.setHeader('Cache-Control', 'no-cache');
         }
       }

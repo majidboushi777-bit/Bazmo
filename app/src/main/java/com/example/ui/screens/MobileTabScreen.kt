@@ -56,11 +56,18 @@ import com.example.ui.components.BazmoSearchBar
 import com.example.ui.components.BazmoSectionHeader
 import com.example.ui.components.BazmoSoftButton
 import com.example.ui.components.BazmoWarrantyBox
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.text.style.TextOverflow
+import com.example.data.BazmoLocations
 import com.example.ui.theme.BorderLight
 import com.example.ui.theme.CardSurface
+import com.example.ui.theme.GoldAccent
+import com.example.ui.theme.HeaderBgDeep
+import com.example.ui.theme.HeaderBgLight
 import com.example.ui.theme.Navy
 import com.example.ui.theme.NavyDeep
 import com.example.ui.theme.NavyLight
+import com.example.ui.theme.PrimaryFill
 import com.example.ui.theme.SuccessGreen
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
@@ -140,7 +147,7 @@ fun MobileTabScreen(
                             ) {
                                 Column(
                                     modifier = Modifier
-                                        .background(Brush.linearGradient(listOf(NavyDeep, NavyLight)))
+                                        .background(Brush.linearGradient(listOf(HeaderBgDeep, HeaderBgLight)))
                                         .padding(15.dp)
                                 ) {
                                     Row(
@@ -410,6 +417,17 @@ fun MobileTabScreen(
                         }
                     }
                     val mobileUserAdRows = remember(mobileUserAds, cols) { mobileUserAds.chunked(cols) }
+                    val approvedMobileStores = remember(state.db.stores) {
+                        state.db.stores.filter { it.status == "approved" && (it.type == "mobile" || it.type == "both") }
+                    }
+                    val locStores = remember(approvedMobileStores, state.session.province, state.session.city, state.session.region) {
+                        filterByLocation(
+                            approvedMobileStores,
+                            state.session.province,
+                            state.session.city,
+                            state.session.region
+                        ) { LocationPoint(it.province, it.city, it.region) }
+                    }
 
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
@@ -467,13 +485,14 @@ fun MobileTabScreen(
                                     val isSelected = mv.brand == brand
                                     val count = if (brand == "همه") state.db.mobiles.size
                                     else brandCounts[brand] ?: 0
+                                    val fillCol = PrimaryFill
                                     val cardColor by animateColorAsState(
-                                        targetValue = if (isSelected) Navy else CardSurface,
+                                        targetValue = if (isSelected) fillCol else CardSurface,
                                         animationSpec = tween(150),
                                         label = "brandBg"
                                     )
                                     val borderColor by animateColorAsState(
-                                        targetValue = if (isSelected) Navy else BorderLight,
+                                        targetValue = if (isSelected) fillCol else BorderLight,
                                         animationSpec = tween(150),
                                         label = "brandBorder"
                                     )
@@ -501,6 +520,56 @@ fun MobileTabScreen(
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = if (isSelected) Color(0xFFD6E4FA) else TextMuted,
                                                 modifier = Modifier.padding(top = 2.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if (locStores.list.isNotEmpty()) {
+                            item(key = "mobile_stores_hdr") {
+                                BazmoSectionHeader(
+                                    title = "🏪 عمده‌فروشان و بنکداران (${locStores.scope})",
+                                    badgeText = "${locStores.list.size.toPersianNumber()} فروشگاه"
+                                )
+                            }
+                            item(key = "mobile_stores_strip") {
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    contentPadding = PaddingValues(bottom = 10.dp)
+                                ) {
+                                    items(locStores.list, key = { it.id }) { st ->
+                                        Column(
+                                            modifier = Modifier
+                                                .width(176.dp)
+                                                .clip(RoundedCornerShape(16.dp))
+                                                .background(Brush.linearGradient(listOf(HeaderBgDeep, HeaderBgLight)))
+                                                .clickable { viewModel.openMobileStore(st.id) }
+                                                .padding(12.dp)
+                                        ) {
+                                            Text(
+                                                text = "🏪 ${st.name}",
+                                                style = MaterialTheme.typography.labelLarge,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                color = Color.White,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = "📍 ${st.city} • ⭐ ${st.rating}",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = Color(0xFFDBEAFE),
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.padding(top = 4.dp)
+                                            )
+                                            Text(
+                                                text = "مشاهده لیست قیمت و موجودی",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = GoldAccent,
+                                                maxLines = 1,
+                                                modifier = Modifier.padding(top = 3.dp)
                                             )
                                         }
                                     }

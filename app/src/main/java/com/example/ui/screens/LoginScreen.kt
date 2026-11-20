@@ -28,7 +28,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Fingerprint
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Visibility
@@ -89,14 +91,23 @@ import com.example.ui.components.BazmoInput
 import com.example.ui.components.BazmoPrimaryButton
 import com.example.ui.components.BazmoSoftButton
 import com.example.ui.theme.AppBackground
+import com.example.ui.theme.BazmoThemeManager
 import com.example.ui.theme.BorderLight
 import com.example.ui.theme.CardSurface
 import com.example.ui.theme.DangerRed
 import com.example.ui.theme.GoldAccent
+import com.example.ui.theme.GoldSoft
+import com.example.ui.theme.GoldText
+import com.example.ui.theme.HeaderBgDeep
+import com.example.ui.theme.HeaderBgLight
+import com.example.ui.theme.HeaderBgMid
+import com.example.ui.theme.LocalBazmoColors
 import com.example.ui.theme.Navy
 import com.example.ui.theme.NavyDeep
 import com.example.ui.theme.NavyLight
 import com.example.ui.theme.SuccessGreen
+import com.example.ui.theme.SuccessSoft
+import com.example.ui.theme.SuccessText
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import kotlinx.coroutines.launch
@@ -138,6 +149,9 @@ fun LoginScreen(
         }
     }
 
+    val context = LocalContext.current
+    val isDark = LocalBazmoColors.current.isDark
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -151,7 +165,7 @@ fun LoginScreen(
                 .clip(RoundedCornerShape(bottomStart = 38.dp, bottomEnd = 38.dp))
                 .background(
                     Brush.verticalGradient(
-                        listOf(NavyDeep, Navy, NavyLight)
+                        listOf(HeaderBgDeep, HeaderBgMid, HeaderBgLight)
                     )
                 )
         ) {
@@ -197,7 +211,42 @@ fun LoginScreen(
                     .widthIn(max = 460.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    Surface(
+                        color = Color.White.copy(alpha = 0.16f),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.28f)),
+                        modifier = Modifier
+                            .minimumInteractiveComponentSize()
+                            .clip(RoundedCornerShape(14.dp))
+                            .clickable { BazmoThemeManager.toggleDark(context, isDark) }
+                            .testTag("theme_toggle_button")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isDark) Icons.Filled.LightMode else Icons.Filled.DarkMode,
+                                contentDescription = if (isDark) "تغییر به حالت روشن" else "تغییر به حالت تاریک",
+                                tint = GoldAccent,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = if (isDark) "حالت روشن" else "حالت تاریک",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
 
                 Surface(
                     shape = RoundedCornerShape(24.dp),
@@ -236,15 +285,23 @@ fun LoginScreen(
 
                 Surface(
                     shape = RoundedCornerShape(28.dp),
-                    color = Color.White.copy(alpha = 0.84f),
+                    color = if (isDark) CardSurface.copy(alpha = 0.92f) else Color.White.copy(alpha = 0.84f),
                     border = BorderStroke(
                         1.4.dp,
                         Brush.linearGradient(
-                            listOf(
-                                Color.White.copy(alpha = 0.98f),
-                                Color(0xFFBAE6FD).copy(alpha = 0.72f),
-                                Color.White.copy(alpha = 0.88f)
-                            )
+                            if (isDark) {
+                                listOf(
+                                    Color(0xFF38BDF8).copy(alpha = 0.42f),
+                                    BorderLight,
+                                    Color(0xFF60A5FA).copy(alpha = 0.32f)
+                                )
+                            } else {
+                                listOf(
+                                    Color.White.copy(alpha = 0.98f),
+                                    Color(0xFFBAE6FD).copy(alpha = 0.72f),
+                                    Color.White.copy(alpha = 0.88f)
+                                )
+                            }
                         )
                     ),
                     shadowElevation = 14.dp,
@@ -253,11 +310,19 @@ fun LoginScreen(
                     Box(
                         modifier = Modifier.background(
                             Brush.verticalGradient(
-                                listOf(
-                                    Color(0xFFF0F9FF).copy(alpha = 0.94f),
-                                    Color(0xFFE0F2FE).copy(alpha = 0.78f),
-                                    Color(0xFFFEF3C7).copy(alpha = 0.42f)
-                                )
+                                if (isDark) {
+                                    listOf(
+                                        Color(0xFF132744).copy(alpha = 0.96f),
+                                        Color(0xFF0F203A).copy(alpha = 0.92f),
+                                        Color(0xFF1B2B45).copy(alpha = 0.88f)
+                                    )
+                                } else {
+                                    listOf(
+                                        Color(0xFFF0F9FF).copy(alpha = 0.94f),
+                                        Color(0xFFE0F2FE).copy(alpha = 0.78f),
+                                        Color(0xFFFEF3C7).copy(alpha = 0.42f)
+                                    )
+                                }
                             )
                         )
                     ) {
@@ -282,7 +347,7 @@ fun LoginScreen(
 
                         if (!regSubmittedNotice.isNullOrBlank()) {
                             Surface(
-                                color = SuccessGreen.copy(alpha = 0.1f),
+                                color = SuccessSoft,
                                 shape = RoundedCornerShape(12.dp),
                                 border = BorderStroke(1.dp, SuccessGreen.copy(alpha = 0.45f)),
                                 modifier = Modifier
@@ -292,7 +357,7 @@ fun LoginScreen(
                                 Text(
                                     text = regSubmittedNotice.orEmpty(),
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = Color(0xFF065F46),
+                                    color = SuccessText,
                                     fontWeight = FontWeight.Bold,
                                     textAlign = TextAlign.Center,
                                     modifier = Modifier.padding(11.dp)
@@ -390,8 +455,8 @@ fun LoginScreen(
                             shape = RoundedCornerShape(14.dp),
                             border = BorderStroke(1.5.dp, GoldAccent),
                             colors = ButtonDefaults.outlinedButtonColors(
-                                containerColor = Color(0xFFFFFBEB),
-                                contentColor = NavyDeep
+                                containerColor = GoldSoft,
+                                contentColor = GoldText
                             ),
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -401,7 +466,7 @@ fun LoginScreen(
                             Icon(
                                 imageVector = Icons.Filled.PersonAdd,
                                 contentDescription = null,
-                                tint = NavyDeep,
+                                tint = GoldText,
                                 modifier = Modifier.size(20.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
@@ -498,7 +563,7 @@ private fun RegistrationRequestDialog(
 
                 // Prominent verification notice required by user
                 Surface(
-                    color = Color(0xFFFEF3C7),
+                    color = GoldSoft,
                     shape = RoundedCornerShape(16.dp),
                     border = BorderStroke(2.dp, GoldAccent),
                     modifier = Modifier
@@ -514,7 +579,7 @@ private fun RegistrationRequestDialog(
                             text = "⚠️ اطلاعیه مهم احراز هویت",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Black,
-                            color = Color(0xFF92400E),
+                            color = GoldText,
                             textAlign = TextAlign.Center
                         )
                         Spacer(modifier = Modifier.height(6.dp))
@@ -523,7 +588,7 @@ private fun RegistrationRequestDialog(
                             fontSize = 15.sp,
                             lineHeight = 23.sp,
                             fontWeight = FontWeight.ExtraBold,
-                            color = NavyDeep,
+                            color = TextPrimary,
                             textAlign = TextAlign.Center
                         )
                     }
@@ -697,6 +762,7 @@ private fun AppleGlassTextField(
     fieldModifier: Modifier = Modifier
 ) {
     val shape = RoundedCornerShape(18.dp)
+    val isDark = LocalBazmoColors.current.isDark
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -709,19 +775,33 @@ private fun AppleGlassTextField(
             .clip(shape)
             .background(
                 Brush.verticalGradient(
-                    listOf(
-                        Color.White.copy(alpha = 0.92f),
-                        Color(0xFFEAF2FC).copy(alpha = 0.78f)
-                    )
+                    if (isDark) {
+                        listOf(
+                            Color(0xFF1A3152).copy(alpha = 0.94f),
+                            Color(0xFF132540).copy(alpha = 0.90f)
+                        )
+                    } else {
+                        listOf(
+                            Color.White.copy(alpha = 0.92f),
+                            Color(0xFFEAF2FC).copy(alpha = 0.78f)
+                        )
+                    }
                 )
             )
             .border(
                 width = 1.25.dp,
                 brush = Brush.verticalGradient(
-                    listOf(
-                        Color.White.copy(alpha = 0.98f),
-                        Color(0xFF93C5FD).copy(alpha = 0.50f)
-                    )
+                    if (isDark) {
+                        listOf(
+                            Color(0xFF60A5FA).copy(alpha = 0.45f),
+                            BorderLight
+                        )
+                    } else {
+                        listOf(
+                            Color.White.copy(alpha = 0.98f),
+                            Color(0xFF93C5FD).copy(alpha = 0.50f)
+                        )
+                    }
                 ),
                 shape = shape
             )
@@ -762,24 +842,42 @@ private fun AppleGlassLoginButton(
     modifier: Modifier = Modifier
 ) {
     val shape = RoundedCornerShape(999.dp)
+    val isDark = LocalBazmoColors.current.isDark
     val isInteractive = enabled || isLoading
-    val glassFill = if (isInteractive) {
-        Brush.verticalGradient(
+    val glassFill = when {
+        isDark && isInteractive -> Brush.verticalGradient(
+            listOf(
+                Color(0xFF2563EB),
+                Color(0xFF1D4ED8),
+                Color(0xFF1E40AF)
+            )
+        )
+        isDark -> Brush.verticalGradient(
+            listOf(
+                Color(0xFF1E3250),
+                Color(0xFF172740)
+            )
+        )
+        isInteractive -> Brush.verticalGradient(
             listOf(
                 Color.White.copy(alpha = 0.68f),
                 Color(0xFFDBEAFE).copy(alpha = 0.48f),
                 Color(0xFFBFDBFE).copy(alpha = 0.36f)
             )
         )
-    } else {
-        Brush.verticalGradient(
+        else -> Brush.verticalGradient(
             listOf(
                 Color.White.copy(alpha = 0.44f),
                 Color(0xFFE2E8F0).copy(alpha = 0.36f)
             )
         )
     }
-    val contentTint = if (isInteractive) Color(0xFF0B254B) else Color(0xFF64748B)
+    val contentTint = when {
+        isDark && isInteractive -> Color.White
+        isDark -> DarkTextMutedColor()
+        isInteractive -> Color(0xFF0B254B)
+        else -> Color(0xFF64748B)
+    }
 
     Box(
         modifier = modifier
@@ -797,11 +895,18 @@ private fun AppleGlassLoginButton(
             .border(
                 width = 1.4.dp,
                 brush = Brush.verticalGradient(
-                    listOf(
-                        Color.White.copy(alpha = 0.96f),
-                        Color(0xFF93C5FD).copy(alpha = 0.55f),
-                        Color.White.copy(alpha = 0.72f)
-                    )
+                    if (isDark) {
+                        listOf(
+                            Color(0xFF93C5FD).copy(alpha = 0.55f),
+                            Color(0xFF3B82F6).copy(alpha = 0.45f)
+                        )
+                    } else {
+                        listOf(
+                            Color.White.copy(alpha = 0.96f),
+                            Color(0xFF93C5FD).copy(alpha = 0.55f),
+                            Color.White.copy(alpha = 0.72f)
+                        )
+                    }
                 ),
                 shape = shape
             )
@@ -817,7 +922,7 @@ private fun AppleGlassLoginButton(
                 .background(
                     Brush.verticalGradient(
                         listOf(
-                            Color.White.copy(alpha = 0.62f),
+                            Color.White.copy(alpha = if (isDark) 0.18f else 0.62f),
                             Color.Transparent
                         )
                     )
@@ -870,18 +975,26 @@ private fun AppleGlassBiometricCard(
     modifier: Modifier = Modifier
 ) {
     val shape = RoundedCornerShape(22.dp)
+    val isDark = LocalBazmoColors.current.isDark
     val labelName = account.displayName.ifBlank { account.email }
     Surface(
         shape = shape,
-        color = Color.White.copy(alpha = 0.62f),
+        color = if (isDark) CardSurface else Color.White.copy(alpha = 0.62f),
         border = BorderStroke(
             1.4.dp,
             Brush.linearGradient(
-                listOf(
-                    Color.White.copy(alpha = 0.96f),
-                    Color(0xFF38BDF8).copy(alpha = 0.55f),
-                    Color.White.copy(alpha = 0.8f)
-                )
+                if (isDark) {
+                    listOf(
+                        Color(0xFF38BDF8).copy(alpha = 0.55f),
+                        BorderLight
+                    )
+                } else {
+                    listOf(
+                        Color.White.copy(alpha = 0.96f),
+                        Color(0xFF38BDF8).copy(alpha = 0.55f),
+                        Color.White.copy(alpha = 0.8f)
+                    )
+                }
             )
         ),
         shadowElevation = 6.dp,
@@ -891,10 +1004,17 @@ private fun AppleGlassBiometricCard(
             modifier = Modifier
                 .background(
                     Brush.verticalGradient(
-                        listOf(
-                            Color.White.copy(alpha = 0.72f),
-                            Color(0xFFE0F2FE).copy(alpha = 0.52f)
-                        )
+                        if (isDark) {
+                            listOf(
+                                Color(0xFF1A3152),
+                                Color(0xFF12233B)
+                            )
+                        } else {
+                            listOf(
+                                Color.White.copy(alpha = 0.72f),
+                                Color(0xFFE0F2FE).copy(alpha = 0.52f)
+                            )
+                        }
                     )
                 )
                 .padding(14.dp),
@@ -919,6 +1039,7 @@ private fun AppleGlassBiometricCard(
             Spacer(modifier = Modifier.height(10.dp))
             if (canUseBiometric) {
                 val pillShape = RoundedCornerShape(999.dp)
+                val pillTint = if (isDark) Color.White else Color(0xFF0B254B)
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -932,14 +1053,25 @@ private fun AppleGlassBiometricCard(
                         .clip(pillShape)
                         .background(
                             Brush.verticalGradient(
-                                listOf(
-                                    Color(0xFFFFFFFF).copy(alpha = 0.88f),
-                                    Color(0xFFBAE6FD).copy(alpha = 0.68f),
-                                    Color(0xFF7DD3FC).copy(alpha = 0.48f)
-                                )
+                                if (isDark) {
+                                    listOf(
+                                        Color(0xFF0284C7),
+                                        Color(0xFF0369A1)
+                                    )
+                                } else {
+                                    listOf(
+                                        Color(0xFFFFFFFF).copy(alpha = 0.88f),
+                                        Color(0xFFBAE6FD).copy(alpha = 0.68f),
+                                        Color(0xFF7DD3FC).copy(alpha = 0.48f)
+                                    )
+                                }
                             )
                         )
-                        .border(1.4.dp, Color.White.copy(alpha = 0.95f), pillShape)
+                        .border(
+                            1.4.dp,
+                            if (isDark) Color(0xFF38BDF8).copy(alpha = 0.7f) else Color.White.copy(alpha = 0.95f),
+                            pillShape
+                        )
                         .clickable(enabled = enabled, onClick = onUnlockClick)
                         .testTag("biometric_signin_button"),
                     contentAlignment = Alignment.Center
@@ -952,7 +1084,7 @@ private fun AppleGlassBiometricCard(
                         Icon(
                             imageVector = Icons.Filled.Fingerprint,
                             contentDescription = "ورود با اثر انگشت",
-                            tint = Color(0xFF0B254B),
+                            tint = pillTint,
                             modifier = Modifier.size(22.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
@@ -960,7 +1092,7 @@ private fun AppleGlassBiometricCard(
                             text = "ورود سریع با اثر انگشت",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Black,
-                            color = Color(0xFF0B254B)
+                            color = pillTint
                         )
                     }
                 }
@@ -982,6 +1114,9 @@ private fun AppleGlassBiometricCard(
         }
     }
 }
+
+@Composable
+private fun DarkTextMutedColor(): Color = TextMuted
 
 
 

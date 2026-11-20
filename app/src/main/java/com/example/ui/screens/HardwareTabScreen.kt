@@ -426,8 +426,11 @@ fun HardwareTabScreen(
                     val approvedAds = remember(state.db.hwAds) {
                         state.db.hwAds.filter { it.status == "approved" && (it.section == "hw" || it.section.isBlank()) }
                     }
-                    val hwStores = remember(state.db.stores) {
-                        state.db.stores.filter { it.type == "hw" || it.type == "both" }
+                    val hwStores = remember(state.db.stores, state.currentUid) {
+                        state.db.stores.filter {
+                            (it.status == "approved" || it.ownerId == state.currentUid) &&
+                                (it.type == "hw" || it.type == "both")
+                        }
                     }
                     val hwStoreRows = remember(hwStores, cols) { hwStores.chunked(cols) }
                     val locAds = remember(approvedAds, state.session.province, state.session.city, state.session.region) {

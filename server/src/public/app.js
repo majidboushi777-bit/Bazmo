@@ -16,10 +16,10 @@
   const ADMIN_TABS = [
     { id: 'dashboard', label: '📊 داشبورد' },
     { id: 'users', label: '👥 کاربران' },
-    { id: 'notifs', label: '🔔 اعلان‌ها' },
-    { id: 'ads', label: '📢 آگهی‌ها' },
-    { id: 'requests', label: '📦 سفارش‌ها' },
-    { id: 'catalog', label: '🗂️ کاتالوگ' }
+    { id: 'notifs', label: '🔔 نوتیفیکیشن' },
+    { id: 'ads', label: '🛡️ آگهی و فروشگاه' },
+    { id: 'requests', label: '📦 سفارش و استعلام' },
+    { id: 'catalog', label: '🧩 کالا و انجمن' }
   ];
   const USER_TABS = [
     { id: 0, label: 'موبایل' },
@@ -132,6 +132,9 @@
     adminNotifCity: 'همه شهرها',
     adminNotifRegion: 'همه مناطق',
     adminNotifTier: 'همه',
+    adminNotifType: 'اطلاعیه صنفی',
+    prevLocation: { province: 'تهران', city: 'تهران', region: 'علاءالدین و جمهوری' },
+    theme: localStorage.getItem('bazmo_theme') || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'),
     // Runtime
     cart: [],
     ws: null,
@@ -151,8 +154,33 @@
     showMyStore: false,
     myStoreId: '',
     myStoreSubTab: 'products', // 'products' | 'inquiries' | 'orders' | 'settings'
-    isSeedingDemo: false
+    isSeedingDemo: false,
+    _resetScrollNext: false
   };
+
+  function isDarkTheme() {
+    return state.theme === 'dark';
+  }
+
+  function applyTheme(nextTheme) {
+    const t = nextTheme === 'dark' ? 'dark' : 'light';
+    state.theme = t;
+    document.documentElement.setAttribute('data-theme', t);
+    try { localStorage.setItem('bazmo_theme', t); } catch {}
+    const meta = document.getElementById('theme-color-meta');
+    if (meta) meta.setAttribute('content', t === 'dark' ? '#0B192E' : '#102542');
+  }
+
+  function toggleTheme() {
+    applyTheme(isDarkTheme() ? 'light' : 'dark');
+    render();
+  }
+
+  function themeSvgIcon(dark) {
+    return dark
+      ? `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6.76 4.84l-1.8-1.79-1.41 1.41 1.79 1.79 1.42-1.41zM4 10.5H1v2h3v-2zm9-9.95h-2V3.5h2V.55zm7.45 3.91l-1.41-1.41-1.79 1.79 1.41 1.41 1.79-1.79zm-3.21 13.7l1.79 1.8 1.41-1.41-1.8-1.79-1.4 1.4zM20 10.5v2h3v-2h-3zm-8-5c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6zm-1 16.95h2V19.5h-2v2.95zm-7.45-3.91l1.41 1.41 1.79-1.8-1.41-1.41-1.79 1.8z"/></svg>`
+      : `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3a9 9 0 109 9c0-.46-.04-.92-.1-1.36a5.389 5.389 0 01-4.4 2.26 5.403 5.403 0 01-3.14-9.8c-.44-.06-.9-.1-1.36-.1z"/></svg>`;
+  }
 
   function normalizeZwnj(val) {
     return String(val || '')
@@ -594,6 +622,9 @@
           state.province = sessionRes.user.province || 'تهران';
           state.city = sessionRes.user.city || 'تهران';
           state.region = sessionRes.user.region || 'همه مناطق';
+          if (!isAllScope(state.province)) {
+            state.prevLocation = { province: state.province, city: state.city, region: state.region };
+          }
           if (getUserTier() === 'نرم‌افزارکار') state.forumBoard = 'software';
         }
       }
@@ -646,10 +677,16 @@
   // ==================== LOGIN & REGISTRATION SCREENS ====================
 
   function renderLoginScreen() {
+    const dark = isDarkTheme();
     return `
       <div class="login-shell">
         <div class="login-hero-bg"></div>
         <div class="login-container">
+          <div class="login-topbar">
+            <button type="button" id="login-theme-btn" class="login-theme-btn" aria-label="تغییر حالت روشن یا تاریک">
+              <span>${dark ? '☀️ حالت روشن' : '🌙 حالت تاریک'}</span>
+            </button>
+          </div>
           <div class="brand-badge">
             <svg width="38" height="38" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <path d="M17 1.01L7 1c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-1.99-2-1.99zM17 19H7V5h10v14z"/>
@@ -748,13 +785,19 @@
     }
     const regBtn = document.getElementById('open-reg-modal-btn');
     if (regBtn) {
-      regBtn.onclick = openRegistrationModal;
+      regBtn.onclick = () => openRegistrationModal();
+    }
+    const themeBtn = document.getElementById('login-theme-btn');
+    if (themeBtn) {
+      themeBtn.onclick = toggleTheme;
     }
   }
 
-  function openRegistrationModal() {
+  function openRegistrationModal(prefill = null) {
     let selProv = 'تهران';
     let selCity = 'تهران';
+    const preEmail = prefill?.email || '';
+    const preName = prefill?.fullName || '';
     const draw = () => {
       const cities = Object.keys(LOCATIONS[selProv] || {});
       if (!cities.includes(selCity)) selCity = cities[0] || '';
@@ -762,9 +805,15 @@
 
       showModal(`
         <h3 style="margin-top:0;">درخواست عضویت در بازمو</h3>
+        <div class="warn-box" style="text-align:right;">
+          <strong>⚠️ اطلاعیه مهم احراز هویت و تایید حساب همکاران</strong>
+          <div style="margin-top:4px;font-size:12px;line-height:1.7;">
+            پس از ثبت درخواست عضویت، تیم پشتیبانی بازمو شماره تماس و اطلاعات صنفی شما را بررسی کرده و حساب شما را فعال می‌کند.
+          </div>
+        </div>
         <div class="form-group">
           <label class="form-label">ایمیل معتبر جهت ورود</label>
-          <input id="reg-email" class="input" type="email" dir="ltr" placeholder="name@example.com" />
+          <input id="reg-email" class="input" type="email" dir="ltr" placeholder="name@example.com" value="${esc(preEmail)}" />
         </div>
         <div class="form-group">
           <label class="form-label">رمز عبور انتخابی (جهت ورود پس از تایید، حداقل ۶ کاراکتر)</label>
@@ -772,7 +821,7 @@
         </div>
         <div class="form-group">
           <label class="form-label">نام و نام خانوادگی</label>
-          <input id="reg-name" class="input" placeholder="مثلاً: علی رضایی" />
+          <input id="reg-name" class="input" placeholder="مثلاً: علی رضایی" value="${esc(preName)}" />
         </div>
         <div class="form-group">
           <label class="form-label">شماره تماس / واتساپ</label>
@@ -851,6 +900,7 @@
 
   function renderAccessGateScreen() {
     const st = state.session.status;
+    const dark = isDarkTheme();
     let title = 'حساب کاربری نیاز به تایید دارد';
     let body = 'حساب شما هنوز فعال‌سازی نشده است. می‌توانید درخواست عضویت بفرستید.';
     if (st === 'inactive') {
@@ -859,11 +909,20 @@
     }
     return `
       <div class="login-shell">
+        <div class="login-hero-bg"></div>
         <div class="login-container">
+          <div class="login-topbar">
+            <button type="button" id="gate-theme-btn" class="login-theme-btn" aria-label="تغییر حالت روشن یا تاریک">
+              <span>${dark ? '☀️ حالت روشن' : '🌙 حالت تاریک'}</span>
+            </button>
+          </div>
           <div class="card">
             <h2 style="margin-top:0;">${esc(title)}</h2>
             <p class="muted">${esc(state.session.email)}</p>
             <p>${esc(body)}</p>
+            ${st === 'not_registered' ? `
+              <button id="gate-register-btn" class="btn btn-gold btn-block" style="margin-bottom:10px;">📝 ثبت درخواست عضویت و احراز هویت</button>
+            ` : ''}
             <div class="row space-between">
               <button id="gate-refresh" class="btn btn-primary">بررسی مجدد وضعیت</button>
               <button id="gate-logout" class="btn btn-outline">خروج</button>
@@ -925,6 +984,9 @@
                 ${!isAdminMode && pendingRegCount > 0 ? `<span class="icon-badge">${toPersianNum(pendingRegCount)}</span>` : ''}
               </button>
             ` : ''}
+            <button class="icon-btn" id="hdr-theme-btn" title="${isDarkTheme() ? 'حالت روشن' : 'حالت تاریک'}" aria-label="تغییر حالت روشن یا تاریک">
+              ${themeSvgIcon(isDarkTheme())}
+            </button>
             <button class="icon-btn" id="hdr-logout-btn" title="خروج از حساب" aria-label="خروج">
               <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg>
             </button>
@@ -952,11 +1014,12 @@
           <nav class="header-segmented" aria-label="بخش‌های اصلی">
             ${USER_TABS.map((t) => `<button class="seg-tab ${state.userTab === t.id ? 'active' : ''}" data-utab="${t.id}">${t.label}</button>`).join('')}
           </nav>
+          <div class="swipe-hint">← برای جابه‌جایی بین منوها به راست و چپ بکشید →</div>
         ` : `
           <nav class="header-segmented admin-tabs" id="admin-tabs-strip" aria-label="منوهای مدیریت">
             ${ADMIN_TABS.map((t) => `<button class="seg-tab ${state.adminTab === t.id ? 'active' : ''}" data-atab="${t.id}">${t.label}</button>`).join('')}
           </nav>
-          <div class="swipe-hint">← برای جابه‌جایی بین بخش‌ها به راست و چپ بکشید →</div>
+          <div class="swipe-hint">← برای جابه‌جایی بین منوها به راست و چپ بکشید →</div>
         `}
       </header>
     `;
@@ -1037,9 +1100,9 @@
         <div class="row">
           <select id="mob-budget" class="select" style="width:auto;min-width:160px;">
             <option value="0" ${state.mobileBudgetMax === 0 ? 'selected' : ''}>همه قیمت‌ها</option>
-            <option value="15000000" ${state.mobileBudgetMax === 15000000 ? 'selected' : ''}>زیر ۱۵ میلیون</option>
-            <option value="35000000" ${state.mobileBudgetMax === 35000000 ? 'selected' : ''}>زیر ۳۵ میلیون</option>
-            <option value="65000000" ${state.mobileBudgetMax === 65000000 ? 'selected' : ''}>زیر ۶۵ میلیون</option>
+            <option value="25000000" ${state.mobileBudgetMax === 25000000 ? 'selected' : ''}>تا ۲۵ میلیون تومان</option>
+            <option value="50000000" ${state.mobileBudgetMax === 50000000 ? 'selected' : ''}>تا ۵۰ میلیون تومان</option>
+            <option value="85000000" ${state.mobileBudgetMax === 85000000 ? 'selected' : ''}>تا ۸۵ میلیون تومان</option>
           </select>
           <button id="mob-post-ad-btn" class="btn btn-gold btn-sm">+ ثبت آگهی</button>
           ${canCreateStore() ? `<button id="mob-add-store-btn" class="btn btn-navy btn-sm">+ ثبت فروشگاه</button>` : ''}
@@ -1112,6 +1175,7 @@
                 <span class="price-tag">${formatToman(a.price)}</span>
                 <div class="row">
                   ${a.phone ? `<a class="btn btn-outline btn-sm" href="tel:${esc(a.phone)}">📞 تماس</a>` : ''}
+                  <button class="btn btn-navy btn-sm" data-chat-ad="${esc(a.id)}">💬 چت / جزئیات</button>
                   <button class="btn btn-primary btn-sm" data-buy-hw="${esc(a.id)}">خرید</button>
                 </div>
               </div>
@@ -1240,38 +1304,38 @@
     const tutorials = (state.db.tutorials || []).filter((t) => t.status === 'approved' || t.ownerId === state.session.uid);
     const boxes = (state.db.boxes || []).filter((b) => b.status === 'approved' || b.ownerId === state.session.uid);
     const swRequests = state.db.swRequests || [];
-
-    if (!swAccess) {
-      return `
-        <div class="warn-box">
-          <div style="font-size:15px;font-weight:900;color:#92400e;">⚠️ بخش تخصصی نرم‌افزار و انجمن نرم‌افزارکاران قفل است</div>
-          <p style="margin:6px 0 0;">دسترسی به آموزش‌های تخصصی، باکس‌ها، فایل‌های تست‌پوینت و انجمن نرم‌افزار فقط برای نقش <strong>نرم‌افزارکار</strong> مجاز است.</p>
-          <p class="muted" style="margin:4px 0 0;">نقش فعلی شما: <strong>${esc(getUserTier())}</strong></p>
-        </div>
-        <div class="section-header-title"><span>سرفصل‌های بخش نرم‌افزار (نمای قفل‌شده)</span></div>
-        <div class="grid">
-          ${problems.map((p) => `
-            <div class="card" style="opacity:0.62;">
-              <div style="font-size:28px;">${esc(p.iconEmoji)}</div>
-              <h4 style="margin:8px 0 4px;">🔒 ${esc(p.title)}</h4>
-              <span class="muted">نیازمند نقش نرم‌افزارکار</span>
-            </div>
-          `).join('')}
-        </div>
-      `;
-    }
-
     const q = state.swSearch.trim().toLowerCase();
 
     return `
       <div class="sub-tabs">
-        <button class="sub-tab ${state.swSection === 'home' || state.swSection === 'detail' ? 'active' : ''}" data-swsec="home">آموزش‌ها و حل مشکل</button>
-        <button class="sub-tab ${state.swSection === 'boxes' ? 'active' : ''}" data-swsec="boxes">باکس و دانگل</button>
-        <button class="sub-tab ${state.swSection === 'req' ? 'active' : ''}" data-swsec="req">درخواست راهنما</button>
-        <button class="sub-tab" data-swsec="forum">💬 انجمن نرم‌افزار</button>
+        <button class="sub-tab ${state.swSection === 'home' || state.swSection === 'detail' ? 'active' : ''}" data-swsec="home">${swAccess ? 'آموزش‌ها و حل مشکل' : '🔒 آموزش‌ها (نرم‌افزارکار)'}</button>
+        <button class="sub-tab ${state.swSection === 'boxes' ? 'active' : ''}" data-swsec="boxes">🧰 باکس و دانگل</button>
+        <button class="sub-tab ${state.swSection === 'req' ? 'active' : ''}" data-swsec="req">📋 درخواست‌ها</button>
+        <button class="sub-tab" data-swsec="forum">${swAccess ? '💬 انجمن نرم‌افزار' : '🔒 انجمن نرم‌افزار'}</button>
       </div>
 
-      ${state.swSection === 'home' ? `
+      ${!swAccess && (state.swSection === 'home' || state.swSection === 'detail') ? `
+        <div class="warn-box">
+          <div style="font-size:15px;font-weight:900;">🔒 آموزش‌ها و انجمن تخصصی نرم‌افزار فقط برای نقش «نرم‌افزارکار» فعال است</div>
+          <p style="margin:6px 0 0;">بخش <strong>درخواست‌ها</strong> و <strong>باکس و دانگل</strong> برای همه همکاران (نقش فعلی: ${esc(getUserTier())}) آزاد است.</p>
+          <div class="row" style="justify-content:center;margin-top:10px;">
+            <button class="btn btn-primary btn-sm" data-swsec="req">📋 ثبت / مشاهده درخواست‌ها</button>
+            <button class="btn btn-navy btn-sm" data-swsec="boxes">🧰 خرید و فروش باکس‌ها</button>
+          </div>
+        </div>
+        <div class="section-header-title"><span>کاشی مشکلات نرم‌افزاری (نمای تخصصی)</span></div>
+        <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(165px,1fr));">
+          ${problems.map((p) => `
+            <div class="card" style="opacity:0.68;text-align:center;">
+              <div style="font-size:28px;">${esc(p.iconEmoji)}</div>
+              <h4 style="margin:8px 0 4px;font-size:13.5px;">🔒 ${esc(p.title)}</h4>
+              <span class="muted">نیازمند نقش نرم‌افزارکار</span>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+
+      ${swAccess && state.swSection === 'home' ? `
         <div class="row space-between" style="margin-bottom:12px;">
           <input id="sw-search" class="input toolbar-search" placeholder="جستجوی مشکل یا عنوان آموزش (مثلاً اپل‌آیدی، شیائومی، FRP)..." value="${esc(state.swSearch)}" />
           <button id="sw-add-tut-btn" class="btn btn-primary btn-sm">+ ثبت آموزش جدید</button>
@@ -1299,7 +1363,7 @@
         </div>
       ` : ''}
 
-      ${state.swSection === 'detail' ? `
+      ${swAccess && state.swSection === 'detail' ? `
         <button class="btn btn-outline btn-sm" id="sw-back-home" style="margin-bottom:10px;">→ بازگشت به دسته‌بندی مشکلات</button>
         <div class="section-header-title">
           <span>${esc(problems.find((p) => p.id === state.swProblemId)?.title || 'آموزش‌های مرتبط')}</span>
@@ -1919,7 +1983,7 @@
 
       return `
         ${pendingRegs.length ? `
-          <div class="card" style="margin-bottom:12px;border:2px solid var(--gold);background:#fffbeb;">
+          <div class="card pending-reg-card">
             <h4 style="margin-top:0;">درخواست‌های عضویت در انتظار تایید (${toPersianNum(pendingRegs.length)})</h4>
             ${pendingRegs.map((r) => `
               <div class="card" style="margin-bottom:8px;">
@@ -1955,7 +2019,8 @@
               <option value="blocked" ${state.adminUserStatus === 'blocked' ? 'selected' : ''}>مسدود</option>
             </select>
             <select id="au-prov" class="select" style="width:auto;">
-              <option value="همه استان‌ها">همه استان‌ها</option>
+              <option value="همه استان‌ها" ${state.adminUserProvince === 'همه استان‌ها' ? 'selected' : ''}>همه استان‌ها</option>
+              <option value="همه کشور" ${state.adminUserProvince === 'همه کشور' ? 'selected' : ''}>همه کشور</option>
               ${Object.keys(LOCATIONS).map((p) => `<option value="${esc(p)}" ${state.adminUserProvince === p ? 'selected' : ''}>${esc(p)}</option>`).join('')}
             </select>
             <button id="au-add-btn" class="btn btn-primary btn-sm">+ افزودن / ویرایش کاربر</button>
@@ -2000,14 +2065,21 @@
         return pOk && cOk && rOk && tOk;
       }).length;
 
+      const notifTypes = ['اطلاعیه صنفی', 'فرصت خرید ویژه', 'هشدار و موجودی قطعه', 'آپدیت نرم‌افزار و باکس'];
       return `
         <div class="card" style="margin-bottom:14px;">
           <h4 style="margin-top:0;">ارسال اعلان منطقه‌ای و صنفی</h4>
+          <div class="form-group">
+            <select id="notif-type" class="select">
+              ${notifTypes.map((nt) => `<option value="${esc(nt)}" ${state.adminNotifType === nt ? 'selected' : ''}>نوع اعلان: ${esc(nt)}</option>`).join('')}
+            </select>
+          </div>
           <div class="form-group"><input id="notif-title" class="input" placeholder="عنوان اعلان" /></div>
           <div class="form-group"><textarea id="notif-body" class="textarea" rows="3" placeholder="متن اعلان..."></textarea></div>
           <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:10px;">
             <select id="notif-prov" class="select">
-              <option value="همه استان‌ها">همه استان‌ها</option>
+              <option value="همه استان‌ها" ${state.adminNotifProv === 'همه استان‌ها' ? 'selected' : ''}>همه استان‌ها</option>
+              <option value="همه کشور" ${state.adminNotifProv === 'همه کشور' ? 'selected' : ''}>همه کشور</option>
               ${Object.keys(LOCATIONS).map((p) => `<option value="${esc(p)}" ${state.adminNotifProv === p ? 'selected' : ''}>${esc(p)}</option>`).join('')}
             </select>
             <select id="notif-city" class="select">
@@ -2340,6 +2412,9 @@
         state.province = document.getElementById('loc-prov').value;
         state.city = document.getElementById('loc-city').value;
         state.region = document.getElementById('loc-reg').value;
+        if (!isAllScope(state.province)) {
+          state.prevLocation = { province: state.province, city: state.city, region: state.region };
+        }
         syncSessionWithServiceWorker(buildSwSessionPayload());
         closeModal();
         render();
@@ -2351,11 +2426,16 @@
   function openNotificationsModal() {
     const visible = getVisibleNotifications();
     const uid = state.session.uid;
+    const unreadVisible = visible.filter((n) => !(n.readBy || []).includes(uid));
     const perm = 'Notification' in window ? Notification.permission : 'unsupported';
     showModal(`
       <div class="row space-between" style="margin-bottom:10px;">
         <h3 style="margin:0;">اعلان‌ها و پیام‌های مدیریت (${toPersianNum(visible.length)})</h3>
-        ${perm !== 'granted' && perm !== 'unsupported' ? `<button id="modal-req-notif" class="btn btn-gold btn-sm">🔔 فعال‌سازی پس‌زمینه</button>` : ''}
+        <div class="row">
+          <button id="modal-refresh-notif" class="btn btn-outline btn-sm">🔄 بروزرسانی</button>
+          ${unreadVisible.length > 0 ? `<button id="modal-read-all-notif" class="btn btn-primary btn-sm">✓ خواندن همه</button>` : ''}
+          ${perm !== 'granted' && perm !== 'unsupported' ? `<button id="modal-req-notif" class="btn btn-gold btn-sm">🔔 پس‌زمینه</button>` : ''}
+        </div>
       </div>
       ${visible.map((n) => {
         const read = (n.readBy || []).includes(uid);
@@ -2375,6 +2455,28 @@
       }).join('') || '<p class="muted">اعلانی برای محدوده فعلی شما ثبت نشده است.</p>'}
       <button class="btn btn-outline btn-block" onclick="window.__closeModal()">بستن</button>
     `);
+    const refreshBtn = document.getElementById('modal-refresh-notif');
+    if (refreshBtn) {
+      refreshBtn.onclick = async () => {
+        await loadAppState(true, true);
+        openNotificationsModal();
+      };
+    }
+    const readAllBtn = document.getElementById('modal-read-all-notif');
+    if (readAllBtn) {
+      readAllBtn.onclick = async () => {
+        readAllBtn.disabled = true;
+        try {
+          await Promise.all(
+            unreadVisible.map((n) => api(`/api/notifications/${n.id}/read`, { method: 'POST' }).catch(() => {}))
+          );
+          await loadAppState(true, true);
+          openNotificationsModal();
+        } catch (err) {
+          toast(err.message);
+        }
+      };
+    }
     const reqBtn = document.getElementById('modal-req-notif');
     if (reqBtn) reqBtn.onclick = requestWebNotifications;
     document.querySelectorAll('[data-read-notif]').forEach((b) => {
@@ -2809,11 +2911,11 @@
       showModal(`
         <h3 style="margin-top:0;">💬 گفتگو درباره: ${esc(ad.title)}</h3>
         <div class="muted" style="margin-bottom:8px;">فروشنده: ${esc(ad.seller)}</div>
-        <div style="max-height:260px;overflow-y:auto;background:#f8fafc;border-radius:12px;padding:10px;margin-bottom:10px;">
+        <div class="chat-thread-box">
           ${msgs.map((m) => `
             <div style="margin-bottom:8px;text-align:${m.senderUid === state.session.uid ? 'left' : 'right'};">
               <span class="badge ${m.senderUid === state.session.uid ? 'badge-blue' : 'badge-gold'}">${esc(m.senderName)}</span>
-              <div style="display:inline-block;background:#fff;border:1px solid var(--border);border-radius:10px;padding:6px 10px;margin-top:2px;">${esc(m.text)}</div>
+              <div><div class="chat-bubble ${m.senderUid === state.session.uid ? 'mine' : ''}">${esc(m.text)}</div></div>
             </div>
           `).join('') || '<p class="muted">هنوز پیامی ارسال نشده است.</p>'}
         </div>
@@ -2918,6 +3020,85 @@
   // ==================== RENDER & EVENT BINDINGS ====================
 
   let lastScrolledAdminTab = '';
+  let lastWheelSwipeAt = 0;
+
+  function stepShellTab(delta) {
+    if (!delta) return;
+    const isAdminMode = Boolean(state.session?.isAdmin && state.mode === 'admin');
+    if (isAdminMode) {
+      const idx = ADMIN_TABS.findIndex((t) => t.id === state.adminTab);
+      const nextIdx = idx + delta;
+      if (nextIdx >= 0 && nextIdx < ADMIN_TABS.length) {
+        state.adminTab = ADMIN_TABS[nextIdx].id;
+        state._resetScrollNext = true;
+        render();
+      }
+    } else if (!state.showDeskRentals && !state.showMyStore && !state.mobileDetailId && !state.storeDetailId) {
+      const nextTab = state.userTab + delta;
+      if (nextTab >= 0 && nextTab <= 3) {
+        state.userTab = nextTab;
+        state.forumThreadId = '';
+        state._resetScrollNext = true;
+        render();
+      }
+    }
+  }
+
+  function bindHorizontalScrollers() {
+    document.querySelectorAll('.store-hscroll, #admin-tabs-strip').forEach((el) => {
+      el.addEventListener(
+        'wheel',
+        (e) => {
+          if (el.scrollWidth <= el.clientWidth + 2) return;
+          if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && Math.abs(e.deltaY) > 0) {
+            e.preventDefault();
+            el.scrollLeft -= e.deltaY;
+          }
+        },
+        { passive: false }
+      );
+
+      let dragging = false;
+      let moved = false;
+      let startX = 0;
+      let startScrollLeft = 0;
+
+      el.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        dragging = true;
+        moved = false;
+        startX = e.clientX;
+        startScrollLeft = el.scrollLeft;
+      });
+
+      const onMouseMove = (e) => {
+        if (!dragging) return;
+        const dx = e.clientX - startX;
+        if (Math.abs(dx) > 5) moved = true;
+        if (moved) {
+          el.scrollLeft = startScrollLeft - dx;
+        }
+      };
+
+      const stopDrag = () => {
+        if (!dragging) return;
+        dragging = false;
+        if (moved) {
+          el.dataset.dragMoved = '1';
+          setTimeout(() => { delete el.dataset.dragMoved; }, 80);
+        }
+      };
+
+      window.addEventListener('mousemove', onMouseMove);
+      window.addEventListener('mouseup', stopDrag);
+      el.addEventListener('click', (e) => {
+        if (el.dataset.dragMoved === '1') {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      }, true);
+    });
+  }
 
   function bindSwipeNavigation() {
     const mainEl = document.getElementById('main-swipe-area');
@@ -2925,36 +3106,59 @@
     let startX = 0;
     let startY = 0;
     let ignoreSwipe = false;
-    mainEl.addEventListener('touchstart', (e) => {
-      if (!e.changedTouches?.length) return;
-      const target = e.target;
-      ignoreSwipe = Boolean(
+
+    const shouldIgnoreTarget = (target) =>
+      Boolean(
         target &&
         typeof target.closest === 'function' &&
-        target.closest('.store-hscroll, .header-segmented.admin-tabs, input, select, textarea, [data-no-swipe]')
+        target.closest('.store-hscroll, .header-segmented.admin-tabs, input, select, textarea, button, a, [data-no-swipe]')
       );
-      startX = e.changedTouches[0].clientX;
-      startY = e.changedTouches[0].clientY;
-    }, { passive: true });
-    mainEl.addEventListener('touchend', (e) => {
-      if (ignoreSwipe || !e.changedTouches?.length) return;
-      const dx = e.changedTouches[0].clientX - startX;
-      const dy = e.changedTouches[0].clientY - startY;
-      if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.4) return;
-      const isAdminMode = Boolean(state.session?.isAdmin && state.mode === 'admin');
-      if (isAdminMode) {
-        const idx = ADMIN_TABS.findIndex((t) => t.id === state.adminTab);
-        const nextIdx = dx > 0 ? idx - 1 : idx + 1;
-        if (nextIdx >= 0 && nextIdx < ADMIN_TABS.length) {
-          state.adminTab = ADMIN_TABS[nextIdx].id;
-          render();
-        }
-      } else {
-        const nextTab = dx > 0 ? state.userTab - 1 : state.userTab + 1;
-        if (nextTab >= 0 && nextTab <= 3) {
-          state.userTab = nextTab;
-          render();
-        }
+
+    if (window.PointerEvent) {
+      let activePointerId = null;
+      mainEl.addEventListener('pointerdown', (e) => {
+        if (e.pointerType !== 'touch' && e.pointerType !== 'pen') return;
+        ignoreSwipe = shouldIgnoreTarget(e.target);
+        activePointerId = e.pointerId;
+        startX = e.clientX;
+        startY = e.clientY;
+      }, { passive: true });
+      mainEl.addEventListener('pointerup', (e) => {
+        if (ignoreSwipe || e.pointerId !== activePointerId) return;
+        activePointerId = null;
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+        if (Math.abs(dx) < 55 || Math.abs(dx) < Math.abs(dy) * 1.35) return;
+        // In RTL HorizontalPager, swiping right (dx > 0) reveals next tab on the left (+1)
+        stepShellTab(dx > 0 ? 1 : -1);
+      }, { passive: true });
+      mainEl.addEventListener('pointercancel', () => {
+        activePointerId = null;
+      }, { passive: true });
+    } else {
+      mainEl.addEventListener('touchstart', (e) => {
+        if (!e.changedTouches?.length) return;
+        ignoreSwipe = shouldIgnoreTarget(e.target);
+        startX = e.changedTouches[0].clientX;
+        startY = e.changedTouches[0].clientY;
+      }, { passive: true });
+      mainEl.addEventListener('touchend', (e) => {
+        if (ignoreSwipe || !e.changedTouches?.length) return;
+        const dx = e.changedTouches[0].clientX - startX;
+        const dy = e.changedTouches[0].clientY - startY;
+        if (Math.abs(dx) < 55 || Math.abs(dx) < Math.abs(dy) * 1.35) return;
+        stepShellTab(dx > 0 ? 1 : -1);
+      }, { passive: true });
+    }
+
+    // Trackpad 2-finger horizontal swipe support on laptop/desktop
+    mainEl.addEventListener('wheel', (e) => {
+      if (shouldIgnoreTarget(e.target)) return;
+      if (Math.abs(e.deltaX) > 42 && Math.abs(e.deltaX) > Math.abs(e.deltaY) * 1.8) {
+        const now = Date.now();
+        if (now - lastWheelSwipeAt < 450) return;
+        lastWheelSwipeAt = now;
+        stepShellTab(e.deltaX < 0 ? 1 : -1);
       }
     }, { passive: true });
   }
@@ -3182,11 +3386,11 @@
       showModal(`
         <h3 style="margin-top:0;">💬 ${esc(title)}</h3>
         <div class="muted" style="margin-bottom:8px;">مخاطب: ${esc(partnerName || 'همکار')}</div>
-        <div style="max-height:260px;overflow-y:auto;background:#f8fafc;border-radius:12px;padding:10px;margin-bottom:10px;">
+        <div class="chat-thread-box">
           ${msgs.map((m) => `
             <div style="margin-bottom:8px;text-align:${m.senderUid === state.session.uid ? 'left' : 'right'};">
               <span class="badge ${m.senderUid === state.session.uid ? 'badge-blue' : 'badge-gold'}">${esc(m.senderName)}</span>
-              <div style="display:inline-block;background:#fff;border:1px solid var(--border);border-radius:10px;padding:6px 10px;margin-top:2px;">${esc(m.text)}</div>
+              <div><div class="chat-bubble ${m.senderUid === state.session.uid ? 'mine' : ''}">${esc(m.text)}</div></div>
             </div>
           `).join('') || '<p class="muted">هنوز پیامی ارسال نشده است.</p>'}
         </div>
@@ -3470,6 +3674,10 @@
     const app = document.getElementById('app');
     if (!app) return;
 
+    const prevScrollY = window.scrollY || 0;
+    const resetScroll = Boolean(state._resetScrollNext);
+    state._resetScrollNext = false;
+
     const activeEl = document.activeElement;
     const preserveFocusIds = new Set(['mob-search', 'sw-search', 'acc-search', 'hw-search', 'forum-search', 'au-search', 'desk-search', 'login-email', 'login-password']);
     const activeId = activeEl && preserveFocusIds.has(activeEl.id) ? activeEl.id : '';
@@ -3498,6 +3706,16 @@
 
     if (state.session.status !== 'ready') {
       app.innerHTML = renderAccessGateScreen();
+      const gateTheme = document.getElementById('gate-theme-btn');
+      if (gateTheme) gateTheme.onclick = toggleTheme;
+      const gateReg = document.getElementById('gate-register-btn');
+      if (gateReg) {
+        gateReg.onclick = () =>
+          openRegistrationModal({
+            email: state.session.email || '',
+            fullName: state.session.displayName || ''
+          });
+      }
       document.getElementById('gate-refresh').onclick = () => loadAppState(false);
       document.getElementById('gate-logout').onclick = () => { logoutLocal(); render(); };
       return;
@@ -3510,6 +3728,7 @@
 
     const isAdminMode = Boolean(state.session.isAdmin && state.mode === 'admin');
     const myStoresCount = getMyStores().length;
+    const isAllCountry = isAllScope(state.province);
     let contentHtml = '';
     if (isAdminMode) {
       contentHtml = renderAdminShell();
@@ -3529,6 +3748,9 @@
 
     const quickBarHtml = !isAdminMode ? `
       <div class="quick-action-bar">
+        <button id="qa-all-country-btn" class="quick-pill-btn ${isAllCountry ? 'active' : ''}">
+          ${isAllCountry ? '✓ 🌍 همه کشور (فعال)' : '🌍 همه کشور'}
+        </button>
         <button id="qa-desk-btn" class="quick-pill-btn ${state.showDeskRentals ? 'active' : ''}">🪑 اجاره میز کار و همکاری (${toPersianNum((state.db.deskRentals || []).length + (state.db.deskRequests || []).length)})</button>
         ${canCreateStore() ? `<button id="qa-mystore-btn" class="quick-pill-btn gold ${state.showMyStore ? 'active' : ''}">🏪 مدیریت فروشگاه من${myStoresCount ? ` (${toPersianNum(myStoresCount)})` : ''}</button>` : ''}
       </div>
@@ -3548,6 +3770,7 @@
     bindHeaderEvents();
     bindContentEvents();
     bindSwipeNavigation();
+    bindHorizontalScrollers();
 
     if (activeId) {
       const nextEl = document.getElementById(activeId);
@@ -3558,14 +3781,22 @@
         }
       }
     }
+
+    requestAnimationFrame(() => {
+      if (resetScroll) window.scrollTo(0, 0);
+      else if (prevScrollY > 0) window.scrollTo(0, prevScrollY);
+    });
   }
 
   function bindHeaderEvents() {
     const logoutBtn = document.getElementById('hdr-logout-btn');
     if (logoutBtn) logoutBtn.onclick = () => { logoutLocal(); render(); };
 
+    const themeBtn = document.getElementById('hdr-theme-btn');
+    if (themeBtn) themeBtn.onclick = toggleTheme;
+
     const modeBtn = document.getElementById('hdr-mode-btn');
-    if (modeBtn) modeBtn.onclick = () => { state.mode = state.mode === 'admin' ? 'user' : 'admin'; render(); };
+    if (modeBtn) modeBtn.onclick = () => { state.mode = state.mode === 'admin' ? 'user' : 'admin'; state._resetScrollNext = true; render(); };
 
     const notifBtn = document.getElementById('hdr-notif-btn');
     if (notifBtn) notifBtn.onclick = openNotificationsModal;
@@ -3593,18 +3824,41 @@
         state.mobileDetailId = '';
         state.storeDetailId = '';
         state.forumThreadId = '';
+        state._resetScrollNext = true;
         render();
       };
     });
 
+    const qaAllCountryBtn = document.getElementById('qa-all-country-btn');
+    if (qaAllCountryBtn) {
+      qaAllCountryBtn.onclick = () => {
+        if (isAllScope(state.province)) {
+          const prev = state.prevLocation || { province: 'تهران', city: 'تهران', region: 'علاءالدین و جمهوری' };
+          state.province = prev.province || 'تهران';
+          state.city = prev.city || 'تهران';
+          state.region = prev.region || 'همه مناطق';
+          toast(`محدوده روی ${state.city} تنظیم شد.`);
+        } else {
+          state.prevLocation = { province: state.province, city: state.city, region: state.region };
+          state.province = 'همه کشور';
+          state.city = 'همه شهرها';
+          state.region = 'همه مناطق';
+          toast('نمایش آگهی‌ها و فروشگاه‌های همه کشور (سراسر ایران) فعال شد.');
+        }
+        syncSessionWithServiceWorker(buildSwSessionPayload());
+        render();
+      };
+    }
+
     const qaDeskBtn = document.getElementById('qa-desk-btn');
-    if (qaDeskBtn) qaDeskBtn.onclick = () => { state.showDeskRentals = !state.showDeskRentals; state.showMyStore = false; render(); };
+    if (qaDeskBtn) qaDeskBtn.onclick = () => { state.showDeskRentals = !state.showDeskRentals; state.showMyStore = false; state._resetScrollNext = true; render(); };
     const qaMyStoreBtn = document.getElementById('qa-mystore-btn');
-    if (qaMyStoreBtn) qaMyStoreBtn.onclick = () => { state.showMyStore = !state.showMyStore; state.showDeskRentals = false; render(); };
+    if (qaMyStoreBtn) qaMyStoreBtn.onclick = () => { state.showMyStore = !state.showMyStore; state.showDeskRentals = false; state._resetScrollNext = true; render(); };
 
     document.querySelectorAll('[data-atab]').forEach((b) => {
       b.onclick = () => {
         state.adminTab = b.dataset.atab;
+        state._resetScrollNext = true;
         render();
       };
     });
@@ -4190,6 +4444,8 @@
     });
 
     // Admin Notifications
+    const nType = document.getElementById('notif-type');
+    if (nType) nType.onchange = (e) => { state.adminNotifType = e.target.value; };
     const nProv = document.getElementById('notif-prov');
     if (nProv) nProv.onchange = (e) => { state.adminNotifProv = e.target.value; state.adminNotifCity = 'همه شهرها'; state.adminNotifRegion = 'همه مناطق'; render(); };
     const nCity = document.getElementById('notif-city');
@@ -4209,6 +4465,7 @@
           body: {
             title,
             body,
+            type: state.adminNotifType || 'اطلاعیه صنفی',
             province: state.adminNotifProv,
             city: state.adminNotifCity,
             region: state.adminNotifRegion,

@@ -73,10 +73,12 @@ import com.example.ui.theme.DangerText
 import com.example.ui.theme.GoldAccent
 import com.example.ui.theme.GoldSoft
 import com.example.ui.theme.GoldText
+import com.example.ui.theme.LocalBazmoColors
 import com.example.ui.theme.Navy
 import com.example.ui.theme.NavyDeep
 import com.example.ui.theme.NavyLight
 import com.example.ui.theme.NavySoft
+import com.example.ui.theme.PrimaryFill
 import com.example.ui.theme.PurpleSoft
 import com.example.ui.theme.PurpleText
 import com.example.ui.theme.SoftSurface
@@ -435,18 +437,27 @@ fun BazmoSquareTile(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val isDark = LocalBazmoColors.current.isDark
     val bgStart by animateColorAsState(
-        targetValue = if (active) Color(0xFFDBEAFE) else Color.White,
+        targetValue = when {
+            active && isDark -> Color(0xFF1D4ED8).copy(alpha = 0.45f)
+            active -> Color(0xFFDBEAFE)
+            else -> CardSurface
+        },
         animationSpec = tween(150),
         label = "tileBgStart"
     )
     val bgEnd by animateColorAsState(
-        targetValue = if (active) Color(0xFFBFDBFE) else NavySoft,
+        targetValue = when {
+            active && isDark -> Color(0xFF1E3A8A).copy(alpha = 0.65f)
+            active -> Color(0xFFBFDBFE)
+            else -> NavySoft
+        },
         animationSpec = tween(150),
         label = "tileBgEnd"
     )
     val borderCol by animateColorAsState(
-        targetValue = if (active) Navy else Color(0xFFD5E3F7),
+        targetValue = if (active) Navy else BorderLight,
         animationSpec = tween(150),
         label = "tileBorder"
     )
@@ -509,13 +520,14 @@ fun BazmoFilterChip(
     selected: Boolean,
     onClick: () -> Unit
 ) {
+    val fillTarget = PrimaryFill
     val containerColor by animateColorAsState(
-        targetValue = if (selected) Navy else CardSurface,
+        targetValue = if (selected) fillTarget else CardSurface,
         animationSpec = tween(150),
         label = "chipContainer"
     )
     val borderColor by animateColorAsState(
-        targetValue = if (selected) Navy else BorderLight,
+        targetValue = if (selected) fillTarget else BorderLight,
         animationSpec = tween(150),
         label = "chipBorder"
     )
@@ -566,7 +578,7 @@ fun BazmoPrimaryButton(
         onClick = onClick,
         enabled = enabled,
         shape = RoundedCornerShape(if (compact) 10.dp else 12.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = Navy, contentColor = Color.White),
+        colors = ButtonDefaults.buttonColors(containerColor = PrimaryFill, contentColor = Color.White),
         contentPadding = if (compact) PaddingValues(horizontal = 12.dp, vertical = 6.dp) else PaddingValues(horizontal = 16.dp, vertical = 10.dp),
         modifier = modifier
             .heightIn(min = if (compact) 38.dp else 48.dp)
@@ -773,7 +785,7 @@ fun BazmoOrderStepper(status: String) {
             val bg by animateColorAsState(
                 targetValue = when {
                     idx < curIdx -> SuccessSoft
-                    idx == curIdx -> Navy
+                    idx == curIdx -> PrimaryFill
                     else -> SoftSurface
                 },
                 animationSpec = tween(180),

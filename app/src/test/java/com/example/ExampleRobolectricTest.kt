@@ -527,4 +527,48 @@ class ExampleRobolectricTest {
         )
         assertEquals(1, matched.size)
     }
+
+    @Test
+    fun `theme manager toggles light and dark mode and persists preference`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val prefs = context.getSharedPreferences("bazmo_theme_prefs", Context.MODE_PRIVATE)
+        prefs.edit().clear().commit()
+        com.example.ui.theme.BazmoThemeManager.resetInMemoryForTest()
+
+        assertEquals(
+            com.example.ui.theme.BazmoThemeMode.SYSTEM,
+            com.example.ui.theme.BazmoThemeManager.modeFlow(context).value
+        )
+        assertFalse(
+            com.example.ui.theme.BazmoThemeManager.resolveDarkTheme(
+                com.example.ui.theme.BazmoThemeMode.SYSTEM,
+                systemInDarkTheme = false
+            )
+        )
+        assertTrue(
+            com.example.ui.theme.BazmoThemeManager.resolveDarkTheme(
+                com.example.ui.theme.BazmoThemeMode.SYSTEM,
+                systemInDarkTheme = true
+            )
+        )
+
+        com.example.ui.theme.BazmoThemeManager.toggleDark(context, currentlyDark = false)
+        assertEquals(
+            com.example.ui.theme.BazmoThemeMode.DARK,
+            com.example.ui.theme.BazmoThemeManager.modeFlow(context).value
+        )
+
+        // Simulate cold restart
+        com.example.ui.theme.BazmoThemeManager.resetInMemoryForTest()
+        assertEquals(
+            com.example.ui.theme.BazmoThemeMode.DARK,
+            com.example.ui.theme.BazmoThemeManager.modeFlow(context).value
+        )
+
+        com.example.ui.theme.BazmoThemeManager.toggleDark(context, currentlyDark = true)
+        assertEquals(
+            com.example.ui.theme.BazmoThemeMode.LIGHT,
+            com.example.ui.theme.BazmoThemeManager.modeFlow(context).value
+        )
+    }
 }

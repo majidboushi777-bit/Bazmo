@@ -47,6 +47,8 @@ import com.example.ui.components.BazmoSectionHeader
 import com.example.ui.components.BazmoSoftButton
 import com.example.ui.components.BazmoWarrantyBox
 import com.example.ui.theme.GoldAccent
+import com.example.ui.theme.HeaderBgDeep
+import com.example.ui.theme.HeaderBgLight
 import com.example.ui.theme.Navy
 import com.example.ui.theme.NavyDeep
 import com.example.ui.theme.NavyLight
@@ -187,7 +189,7 @@ fun AccessoriesTabScreen(
                             modifier = Modifier
                                 .width(160.dp)
                                 .clip(RoundedCornerShape(16.dp))
-                                .background(Brush.linearGradient(listOf(NavyDeep, NavyLight)))
+                                .background(Brush.linearGradient(listOf(HeaderBgDeep, HeaderBgLight)))
                                 .then(
                                     if (selected) Modifier.border(BorderStroke(3.dp, GoldAccent), RoundedCornerShape(16.dp))
                                     else Modifier
