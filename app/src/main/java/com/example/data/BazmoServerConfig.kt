@@ -36,7 +36,7 @@ object BazmoServerConfig {
 
     fun baseUrl(): String {
         val raw = BuildConfig.BAZMO_API_BASE_URL.trim().trimEnd('/')
-        return raw.ifBlank { "https://bazmo-2.weblines.ir" }
+        return raw.ifBlank { "https://bazmo.weblines.ir" }
     }
 
     fun wsUrl(base: String = baseUrl()): String {

@@ -244,8 +244,8 @@ class ExampleRobolectricTest {
 
     @Test
     fun `server config normalizes http and https urls to websocket endpoints`() {
-        assertEquals("https://bazmo-2.weblines.ir", BazmoServerConfig.baseUrl())
-        assertEquals("wss://bazmo-2.weblines.ir/ws", BazmoServerConfig.wsUrl("https://bazmo-2.weblines.ir/"))
+        assertEquals("https://bazmo.weblines.ir", BazmoServerConfig.baseUrl())
+        assertEquals("wss://bazmo.weblines.ir/ws", BazmoServerConfig.wsUrl("https://bazmo.weblines.ir/"))
         assertEquals("ws://localhost:3000/ws", BazmoServerConfig.wsUrl("http://localhost:3000/"))
     }
 
