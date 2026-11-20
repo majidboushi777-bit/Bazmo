@@ -7,6 +7,7 @@ import com.example.data.BazmoAuthManager
 import com.example.data.BazmoDbState
 import com.example.data.BazmoLocations
 import com.example.data.BazmoNotificationHelper
+import com.example.data.BazmoRepository
 import com.example.data.BazmoRoles
 import com.example.data.BazmoSeedData
 import com.example.data.BazmoServerConfig
@@ -465,5 +466,15 @@ class ExampleRobolectricTest {
 
         val session = BazmoSessionState()
         assertFalse(session.isSeedingDemo)
+    }
+
+    @Test
+    fun `repository sanitizeAsciiEtag rejects non-ascii headers and accepts valid etags`() {
+        val repo = BazmoRepository(authToken = "tok_test", currentUid = "u_1")
+        assertNull(repo.sanitizeAsciiEtag(null))
+        assertNull(repo.sanitizeAsciiEtag("   "))
+        assertNull(repo.sanitizeAsciiEtag("\"v1-تعمیرکار-1-u_1\""))
+        assertEquals("\"abc123_DEF-\"", repo.sanitizeAsciiEtag("  \"abc123_DEF-\"  "))
+        assertEquals("W/\"abc123\"", repo.sanitizeAsciiEtag("W/\"abc123\""))
     }
 }

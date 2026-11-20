@@ -14,7 +14,7 @@ const {
   isValidEmailFormat,
   normalizeTier
 } = require('../src/constants');
-const { canAccessForumBoard } = require('../src/routes');
+const { canAccessForumBoard, buildStateEtag } = require('../src/routes');
 const {
   verifyGoogleIdToken,
   isSuperAdminEmail,
@@ -126,4 +126,21 @@ test('bootstrap super admin email and salted password hash match expected creden
   assert.equal(BOOTSTRAP_ADMIN_EMAIL, 'majid.boushi77@gmail.com');
   assert.equal(verifyPassword('66Gf65B22@', BOOTSTRAP_ADMIN_HASH), true);
   assert.equal(verifyPassword('wrong-password', BOOTSTRAP_ADMIN_HASH), false);
+});
+
+test('buildStateEtag always generates pure ASCII HTTP header values across all Persian roles', () => {
+  const seen = new Set();
+  for (const role of ALL_ROLES) {
+    const etag = buildStateEtag(42, false, role, true, 'u_123');
+    assert.match(etag, /^"[\x21-\x7e]+"$/);
+    seen.add(etag);
+  }
+  assert.equal(seen.size, ALL_ROLES.length);
+  const adminEtag = buildStateEtag(42, true, 'تعمیرکار', true, 'u_123');
+  assert.match(adminEtag, /^"[\x21-\x7e]+"$/);
+  assert.notEqual(adminEtag, buildStateEtag(42, false, 'تعمیرکار', true, 'u_123'));
+  assert.notEqual(
+    buildStateEtag(42, false, 'تعمیرکار', true, 'u_123'),
+    buildStateEtag(43, false, 'تعمیرکار', true, 'u_123')
+  );
 });

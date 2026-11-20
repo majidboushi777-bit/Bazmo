@@ -280,7 +280,12 @@
   async function fetchStateWithEtag() {
     const headers = {};
     if (state.token) headers.Authorization = `Bearer ${state.token}`;
-    if (state.stateEtag && state.db) headers['If-None-Match'] = state.stateEtag;
+    const isAsciiEtag = (v) => typeof v === 'string' && v.length > 0 && /^[\x20-\x7e]+$/.test(v);
+    if (isAsciiEtag(state.stateEtag) && state.db) {
+      headers['If-None-Match'] = state.stateEtag;
+    } else if (!isAsciiEtag(state.stateEtag)) {
+      state.stateEtag = '';
+    }
     const res = await fetch('/api/state', { method: 'GET', headers });
     if (res.status === 304) return null;
     const data = await res.json().catch(() => ({}));
@@ -289,7 +294,7 @@
       throw new Error(data.error || `خطای سرور (${res.status})`);
     }
     const nextEtag = res.headers.get('ETag');
-    if (nextEtag) state.stateEtag = nextEtag;
+    if (isAsciiEtag(nextEtag)) state.stateEtag = nextEtag;
     return data;
   }
 

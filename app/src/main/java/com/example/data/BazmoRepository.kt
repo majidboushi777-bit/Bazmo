@@ -115,18 +115,27 @@ class BazmoRepository(
         }
     }
 
+    internal fun sanitizeAsciiEtag(value: String?): String? {
+        val trimmed = value?.trim().orEmpty()
+        if (trimmed.isEmpty()) return null
+        val isAscii = trimmed.all { it == '\t' || it in '\u0020'..'\u007e' }
+        return if (isAscii) trimmed else null
+    }
+
     private suspend fun fetchStateFromServer(): Result<FetchStateOutcome> = withContext(Dispatchers.IO) {
         try {
             val reqBuilder = Request.Builder()
                 .url("$normalizedBaseUrl/api/state")
                 .header("Authorization", "Bearer $authToken")
                 .get()
-            val knownEtag = lastStateEtag
-            if (!knownEtag.isNullOrBlank()) {
+            val knownEtag = sanitizeAsciiEtag(lastStateEtag)
+            if (knownEtag != null) {
                 reqBuilder.header("If-None-Match", knownEtag)
+            } else {
+                lastStateEtag = null
             }
             client.newCall(reqBuilder.build()).execute().use { res ->
-                val etagHeader = res.header("ETag") ?: knownEtag
+                val etagHeader = sanitizeAsciiEtag(res.header("ETag")) ?: knownEtag
                 if (res.code == 304) {
                     return@withContext Result.success(FetchStateOutcome.NotModified(etagHeader))
                 }
@@ -192,6 +201,17 @@ class BazmoRepository(
                     is FetchStateOutcome.NotModified -> {
                         if (latestState == null) {
                             lastStateEtag = null
+                            val retryRes = fetchStateFromServer()
+                            retryRes.onSuccess { retryOutcome ->
+                                if (retryOutcome is FetchStateOutcome.Success) {
+                                    latestState = retryOutcome.state
+                                    trySend(retryOutcome.state)
+                                }
+                            }.onFailure { err ->
+                                if (throwOnInitialFailure && latestState == null) {
+                                    close(err)
+                                }
+                            }
                         }
                     }
                 }

@@ -1,3 +1,4 @@
+const crypto = require('node:crypto');
 const express = require('express');
 const db = require('./db');
 const {
@@ -48,6 +49,12 @@ function canAccessForumBoard(userTier, isAdmin, board) {
   if (board === 'hardware') return userTier === 'تعمیرکار';
   if (board === 'software') return userTier === 'نرم\u200cافزارکار';
   return false;
+}
+
+function buildStateEtag(version, isAdmin, userTier, showDemoData, uid) {
+  const raw = `v${version}-${isAdmin ? 'A' : normalizeZwnj(userTier)}-${showDemoData ? '1' : '0'}-${String(uid || '')}`;
+  const digest = crypto.createHash('sha256').update(raw, 'utf8').digest('base64url');
+  return `"${digest}"`;
 }
 
 function createApiRouter(broadcastSync = () => {}, sseClients = new Set(), getStateVersion = () => 1) {
@@ -238,8 +245,9 @@ function createApiRouter(broadcastSync = () => {}, sseClients = new Set(), getSt
       }
 
       const showDemoData = await getDemoVisibility();
-      const etag = `"v${getStateVersion()}-${isAdmin ? 'A' : normalizeZwnj(req.userTier)}-${showDemoData ? '1' : '0'}-${uid}"`;
-      if (req.headers['if-none-match'] === etag) {
+      const etag = buildStateEtag(getStateVersion(), isAdmin, req.userTier, showDemoData, uid);
+      const ifNoneMatch = String(req.headers['if-none-match'] || '').trim();
+      if (ifNoneMatch === etag || ifNoneMatch === `W/${etag}`) {
         res.setHeader('ETag', etag);
         res.setHeader('Cache-Control', 'no-cache');
         return res.status(304).end();
@@ -1909,5 +1917,6 @@ function createApiRouter(broadcastSync = () => {}, sseClients = new Set(), getSt
 
 module.exports = {
   createApiRouter,
-  canAccessForumBoard
+  canAccessForumBoard,
+  buildStateEtag
 };
