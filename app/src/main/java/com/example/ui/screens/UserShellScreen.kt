@@ -351,11 +351,12 @@ fun UserShellScreen(
                                     tint = GoldAccent,
                                     modifier = Modifier.size(16.dp)
                                 )
-                                val locText = buildString {
-                                    append(state.session.city)
-                                    if (state.session.region.isNotBlank() && state.session.region != "همه مناطق") {
-                                        append(" • ${state.session.region}")
-                                    }
+                                val locText = when {
+                                    BazmoLocations.isAllScope(state.session.province) -> BazmoLocations.ALL_COUNTRY
+                                    BazmoLocations.isAllScope(state.session.city) -> state.session.province
+                                    state.session.region.isNotBlank() && state.session.region != BazmoLocations.ALL_REGIONS ->
+                                        "${state.session.city} • ${state.session.region}"
+                                    else -> state.session.city
                                 }
                                 Text(
                                     text = locText,
@@ -675,23 +676,56 @@ private fun ModalContent(
 ) {
     when (modal) {
         BazmoModal.LocationPicker -> {
-            var prov by rememberSaveable { mutableStateOf(state.session.province) }
-            var city by rememberSaveable { mutableStateOf(state.session.city) }
-            var region by rememberSaveable { mutableStateOf(state.session.region) }
-            val provs = BazmoLocations.provinces()
-            val cities = BazmoLocations.citiesFor(prov)
-            val regions = BazmoLocations.regionsFor(prov, city)
+            var prov by rememberSaveable {
+                mutableStateOf(
+                    if (BazmoLocations.isAllScope(state.session.province)) BazmoLocations.ALL_COUNTRY
+                    else state.session.province
+                )
+            }
+            var city by rememberSaveable {
+                mutableStateOf(
+                    if (BazmoLocations.isAllScope(prov) || BazmoLocations.isAllScope(state.session.city)) BazmoLocations.ALL_CITIES
+                    else state.session.city
+                )
+            }
+            var region by rememberSaveable {
+                mutableStateOf(
+                    if (BazmoLocations.isAllScope(prov) || BazmoLocations.isAllScope(city)) BazmoLocations.ALL_REGIONS
+                    else state.session.region
+                )
+            }
+            val provs = BazmoLocations.provincesWithAll()
+            val cities = BazmoLocations.citiesWithAllFor(prov)
+            val regions = BazmoLocations.regionsWithAllFor(prov, city)
 
             ModalHeader("📍 انتخاب استان، شهر و منطقه", { viewModel.closeModal() })
+            BazmoGoldButton(
+                text = "🌍 نمایش همه کشور (سراسر ایران)",
+                onClick = {
+                    viewModel.setLocation(
+                        BazmoLocations.ALL_COUNTRY,
+                        BazmoLocations.ALL_CITIES,
+                        BazmoLocations.ALL_REGIONS
+                    )
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp)
+                    .testTag("location_all_country_button")
+            )
             BazmoDropdownSelector(
                 label = "استان:",
                 selectedValue = prov,
                 options = provs,
                 onSelect = { newP ->
                     prov = newP
-                    val firstCity = BazmoLocations.citiesFor(newP).firstOrNull() ?: ""
-                    city = firstCity
-                    region = "همه مناطق"
+                    if (BazmoLocations.isAllScope(newP)) {
+                        city = BazmoLocations.ALL_CITIES
+                        region = BazmoLocations.ALL_REGIONS
+                    } else {
+                        city = BazmoLocations.citiesFor(newP).firstOrNull() ?: BazmoLocations.ALL_CITIES
+                        region = BazmoLocations.ALL_REGIONS
+                    }
                 },
                 modifier = Modifier.padding(bottom = 8.dp)
             )
@@ -701,7 +735,7 @@ private fun ModalContent(
                 options = cities,
                 onSelect = { newC ->
                     city = newC
-                    region = "همه مناطق"
+                    region = BazmoLocations.ALL_REGIONS
                 },
                 modifier = Modifier.padding(bottom = 8.dp)
             )

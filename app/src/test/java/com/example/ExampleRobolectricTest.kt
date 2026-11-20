@@ -477,4 +477,54 @@ class ExampleRobolectricTest {
         assertEquals("\"abc123_DEF-\"", repo.sanitizeAsciiEtag("  \"abc123_DEF-\"  "))
         assertEquals("W/\"abc123\"", repo.sanitizeAsciiEtag("W/\"abc123\""))
     }
+
+    @Test
+    fun `all-country and all-city location filters return expected scopes`() {
+        val items = listOf(
+            LocationPoint("تهران", "تهران", "علاءالدین و جمهوری"),
+            LocationPoint("اصفهان", "اصفهان", "فردوسی و بازار موبایل"),
+            LocationPoint("فارس", "شیراز", "ملاصدرا")
+        )
+        assertTrue(BazmoLocations.isAllScope(BazmoLocations.ALL_COUNTRY))
+        assertTrue(BazmoLocations.provincesWithAll().first() == BazmoLocations.ALL_COUNTRY)
+        assertEquals(listOf(BazmoLocations.ALL_CITIES), BazmoLocations.citiesWithAllFor(BazmoLocations.ALL_COUNTRY))
+
+        val allCountryRes = filterByLocation(
+            items,
+            BazmoLocations.ALL_COUNTRY,
+            BazmoLocations.ALL_CITIES,
+            BazmoLocations.ALL_REGIONS
+        ) { it }
+        assertEquals(3, allCountryRes.list.size)
+        assertEquals("سراسر کشور", allCountryRes.scope)
+
+        val allCitiesInProvRes = filterByLocation(
+            items,
+            "اصفهان",
+            BazmoLocations.ALL_CITIES,
+            BazmoLocations.ALL_REGIONS
+        ) { it }
+        assertEquals(1, allCitiesInProvRes.list.size)
+        assertEquals("استان اصفهان", allCitiesInProvRes.scope)
+
+        val tehranNotif = NotificationEntity(
+            id = "n_country",
+            title = "اعلان تهران",
+            body = "متن",
+            province = "تهران",
+            city = "تهران",
+            region = "علاءالدین و جمهوری",
+            tierFilter = BazmoRoles.REPAIR_TECH
+        )
+        val matched = BazmoNotificationHelper.filterMatchingUnread(
+            notifications = listOf(tehranNotif),
+            uid = "u_99",
+            isAdmin = false,
+            tier = BazmoRoles.REPAIR_TECH,
+            province = BazmoLocations.ALL_COUNTRY,
+            city = BazmoLocations.ALL_CITIES,
+            region = BazmoLocations.ALL_REGIONS
+        )
+        assertEquals(1, matched.size)
+    }
 }

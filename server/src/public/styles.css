@@ -25,7 +25,7 @@
 html, body {
   margin: 0;
   padding: 0;
-  overflow-x: hidden;
+  overflow-x: clip;
   overscroll-behavior-y: contain;
   scroll-behavior: smooth;
 }
@@ -45,8 +45,8 @@ body {
   background: var(--bg);
   color: var(--text);
   line-height: 1.6;
+  min-height: 100%;
   -webkit-font-smoothing: antialiased;
-  touch-action: manipulation;
 }
 
 button, input, select, textarea {
@@ -139,7 +139,8 @@ button, input, select, textarea {
   min-height: 100vh;
   min-height: 100dvh;
   position: relative;
-  overflow: hidden;
+  overflow-x: clip;
+  overflow-y: auto;
   padding: calc(20px + env(safe-area-inset-top)) 16px calc(40px + env(safe-area-inset-bottom));
 }
 
@@ -538,6 +539,7 @@ button, input, select, textarea {
 .app-shell {
   width: 100%;
   max-width: 600px;
+  min-width: 0;
   margin: 0 auto;
   min-height: 100vh;
   min-height: 100dvh;
@@ -749,6 +751,9 @@ button, input, select, textarea {
 .header-segmented.admin-tabs {
   display: flex;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
   scrollbar-width: none;
 }
 
@@ -787,6 +792,7 @@ button, input, select, textarea {
 
 .main-content {
   width: 100%;
+  min-width: 0;
   padding: 14px 14px calc(24px + env(safe-area-inset-bottom));
   flex: 1;
 }
@@ -953,6 +959,9 @@ button, input, select, textarea {
   display: flex;
   gap: 10px;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
   padding-bottom: 6px;
   margin-bottom: 10px;
   scrollbar-width: thin;
@@ -1106,6 +1115,8 @@ button, input, select, textarea {
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 16px;
 }
 
@@ -1117,6 +1128,8 @@ button, input, select, textarea {
   max-height: 90vh;
   max-height: 90dvh;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   padding: 20px;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
   animation: modalScaleIn 0.2s var(--ease-spring);

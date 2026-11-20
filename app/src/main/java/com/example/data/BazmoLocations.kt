@@ -50,13 +50,25 @@ object BazmoLocations {
         )
     )
 
+    const val ALL_COUNTRY = "همه کشور"
+    const val ALL_CITIES = "همه شهرها"
+    const val ALL_REGIONS = "همه مناطق"
+
     fun provinces(): List<String> = IRAN_LOCATIONS.keys.toList()
+
+    fun provincesWithAll(): List<String> = listOf(ALL_COUNTRY) + provinces()
 
     fun citiesFor(province: String): List<String> =
         IRAN_LOCATIONS[province]?.keys?.toList() ?: emptyList()
 
+    fun citiesWithAllFor(province: String): List<String> =
+        if (isAllScope(province)) listOf(ALL_CITIES) else listOf(ALL_CITIES) + citiesFor(province)
+
     fun regionsFor(province: String, city: String): List<String> =
-        IRAN_LOCATIONS[province]?.get(city) ?: listOf("همه مناطق")
+        IRAN_LOCATIONS[province]?.get(city) ?: listOf(ALL_REGIONS)
+
+    fun regionsWithAllFor(province: String, city: String): List<String> =
+        if (isAllScope(province) || isAllScope(city)) listOf(ALL_REGIONS) else regionsFor(province, city)
 
     fun normalizeZwnj(value: String?): String =
         (value ?: "")
@@ -73,7 +85,9 @@ object BazmoLocations {
             norm == "همهاستانها" ||
             norm == "همهشهرها" ||
             norm == "همهمناطق" ||
-            norm == "همهبخشها"
+            norm == "همهبخشها" ||
+            norm == "همهکشور" ||
+            norm == "سراسرکشور"
     }
 }
 
@@ -95,23 +109,28 @@ fun <T> filterByLocation(
     region: String,
     getLoc: (T) -> LocationPoint
 ): LocationFilterResult<T> {
+    if (BazmoLocations.isAllScope(province)) {
+        return LocationFilterResult(items, "سراسر کشور")
+    }
     val normCity = BazmoLocations.normalizeZwnj(city)
     val normProv = BazmoLocations.normalizeZwnj(province)
     val normReg = BazmoLocations.normalizeZwnj(region)
 
-    if (!BazmoLocations.isAllScope(region)) {
-        val exactRegion = items.filter {
-            val l = getLoc(it)
-            BazmoLocations.normalizeZwnj(l.city) == normCity &&
-                BazmoLocations.normalizeZwnj(l.region) == normReg
+    if (!BazmoLocations.isAllScope(city)) {
+        if (!BazmoLocations.isAllScope(region)) {
+            val exactRegion = items.filter {
+                val l = getLoc(it)
+                BazmoLocations.normalizeZwnj(l.city) == normCity &&
+                    BazmoLocations.normalizeZwnj(l.region) == normReg
+            }
+            if (exactRegion.isNotEmpty()) {
+                return LocationFilterResult(exactRegion, "$city ($region)")
+            }
         }
-        if (exactRegion.isNotEmpty()) {
-            return LocationFilterResult(exactRegion, "$city ($region)")
+        val exactCity = items.filter { BazmoLocations.normalizeZwnj(getLoc(it).city) == normCity }
+        if (exactCity.isNotEmpty()) {
+            return LocationFilterResult(exactCity, "شهر $city")
         }
-    }
-    val exactCity = items.filter { BazmoLocations.normalizeZwnj(getLoc(it).city) == normCity }
-    if (exactCity.isNotEmpty()) {
-        return LocationFilterResult(exactCity, "شهر $city")
     }
     val sameProv = items.filter { BazmoLocations.normalizeZwnj(getLoc(it).province) == normProv }
     if (sameProv.isNotEmpty()) {

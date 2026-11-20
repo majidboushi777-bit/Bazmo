@@ -228,8 +228,10 @@ object BazmoNotificationHelper {
         return notifications.filter { n ->
             if (n.readBy.contains(uid)) return@filter false
             val provMatch = BazmoLocations.isAllScope(n.province) ||
+                BazmoLocations.isAllScope(province) ||
                 BazmoLocations.normalizeZwnj(n.province) == normProv
             val cityMatch = BazmoLocations.isAllScope(n.city) ||
+                BazmoLocations.isAllScope(city) ||
                 BazmoLocations.normalizeZwnj(n.city) == normCity
             val regMatch = BazmoLocations.isAllScope(n.region) ||
                 BazmoLocations.isAllScope(region) ||

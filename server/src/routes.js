@@ -40,7 +40,9 @@ function isAllScope(val) {
     n === 'همهاستانها' ||
     n === 'همهشهرها' ||
     n === 'همهمناطق' ||
-    n === 'همهبخشها'
+    n === 'همهبخشها' ||
+    n === 'همهکشور' ||
+    n === 'سراسرکشور'
   );
 }
 
@@ -421,8 +423,8 @@ function createApiRouter(broadcastSync = () => {}, sseClients = new Set(), getSt
         .filter((n) => {
           const readBy = Array.isArray(n.readBy) ? n.readBy : [];
           if (readBy.includes(uid)) return false;
-          const provMatch = isAllScope(n.province) || normalizeZwnj(n.province) === normalizeZwnj(province);
-          const cityMatch = isAllScope(n.city) || normalizeZwnj(n.city) === normalizeZwnj(city);
+          const provMatch = isAllScope(n.province) || isAllScope(province) || normalizeZwnj(n.province) === normalizeZwnj(province);
+          const cityMatch = isAllScope(n.city) || isAllScope(city) || normalizeZwnj(n.city) === normalizeZwnj(city);
           const regMatch = isAllScope(n.region) || isAllScope(region) || normalizeZwnj(n.region) === normalizeZwnj(region);
           const tierMatch =
             req.isAdmin || isAllScope(n.tierFilter) || normalizeZwnj(n.tierFilter) === normalizeZwnj(userTier);

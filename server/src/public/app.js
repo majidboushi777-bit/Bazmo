@@ -171,7 +171,9 @@
       n === 'همهاستانها' ||
       n === 'همهشهرها' ||
       n === 'همهمناطق' ||
-      n === 'همهبخشها'
+      n === 'همهبخشها' ||
+      n === 'همهکشور' ||
+      n === 'سراسرکشور'
     );
   }
 
@@ -226,16 +228,20 @@
   }
 
   function filterByLocation(items, province, city, region, getLoc) {
-    if (region && !isAllScope(region)) {
-      const exactReg = items.filter((item) => {
-        const l = getLoc(item);
-        return normalizeZwnj(l.city) === normalizeZwnj(city) && normalizeZwnj(l.region) === normalizeZwnj(region);
-      });
-      if (exactReg.length) return { list: exactReg, scope: `${city} (${region})` };
+    if (isAllScope(province)) {
+      return { list: items, scope: 'سراسر کشور' };
     }
-    const exactCity = items.filter((item) => normalizeZwnj(getLoc(item).city) === normalizeZwnj(city));
-    if (exactCity.length) return { list: exactCity, scope: `شهر ${city}` };
-
+    if (!isAllScope(city)) {
+      if (region && !isAllScope(region)) {
+        const exactReg = items.filter((item) => {
+          const l = getLoc(item);
+          return normalizeZwnj(l.city) === normalizeZwnj(city) && normalizeZwnj(l.region) === normalizeZwnj(region);
+        });
+        if (exactReg.length) return { list: exactReg, scope: `${city} (${region})` };
+      }
+      const exactCity = items.filter((item) => normalizeZwnj(getLoc(item).city) === normalizeZwnj(city));
+      if (exactCity.length) return { list: exactCity, scope: `شهر ${city}` };
+    }
     const exactProv = items.filter((item) => normalizeZwnj(getLoc(item).province) === normalizeZwnj(province));
     if (exactProv.length) return { list: exactProv, scope: `استان ${province}` };
 
@@ -338,8 +344,8 @@
 
   function isNotifVisibleToCurrentUser(n) {
     if (!n || !state.session) return false;
-    const provMatch = isAllScope(n.province) || normalizeZwnj(n.province) === normalizeZwnj(state.province);
-    const cityMatch = isAllScope(n.city) || normalizeZwnj(n.city) === normalizeZwnj(state.city);
+    const provMatch = isAllScope(n.province) || isAllScope(state.province) || normalizeZwnj(n.province) === normalizeZwnj(state.province);
+    const cityMatch = isAllScope(n.city) || isAllScope(state.city) || normalizeZwnj(n.city) === normalizeZwnj(state.city);
     const regMatch = isAllScope(n.region) || isAllScope(state.region) || normalizeZwnj(n.region) === normalizeZwnj(state.region);
     const tierMatch = state.session.isAdmin || isAllScope(n.tierFilter) || normalizeZwnj(n.tierFilter) === normalizeZwnj(getUserTier());
     return provMatch && cityMatch && regMatch && tierMatch;
@@ -934,7 +940,13 @@
             </button>
             <button class="glass-pill location-pill" id="hdr-location-btn">
               <svg viewBox="0 0 24 24" fill="#FFD54F"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
-              <span class="glass-pill-text">${esc(state.city)}${!isAllScope(state.region) ? ` · ${esc(state.region)}` : ''}</span>
+              <span class="glass-pill-text">${esc(
+                isAllScope(state.province)
+                  ? 'همه کشور'
+                  : isAllScope(state.city)
+                    ? state.province
+                    : `${state.city}${!isAllScope(state.region) ? ` · ${state.region}` : ''}`
+              )}</span>
             </button>
           </div>
           <nav class="header-segmented" aria-label="بخش‌های اصلی">
@@ -2258,30 +2270,37 @@
   window.__closeModal = closeModal;
 
   function openLocationModal() {
-    let prov = state.province;
-    let city = state.city;
+    let prov = isAllScope(state.province) ? 'همه کشور' : state.province;
+    let city = isAllScope(prov) ? 'همه شهرها' : state.city;
+    let reg = isAllScope(prov) || isAllScope(city) ? 'همه مناطق' : state.region;
     const draw = () => {
-      const cities = Object.keys(LOCATIONS[prov] || {});
-      if (!cities.includes(city)) city = cities[0] || '';
-      const regions = LOCATIONS[prov]?.[city] || ['همه مناطق'];
+      const provOptions = ['همه کشور', ...Object.keys(LOCATIONS)];
+      const allCountry = isAllScope(prov);
+      const cities = allCountry ? ['همه شهرها'] : ['همه شهرها', ...Object.keys(LOCATIONS[prov] || {})];
+      if (!cities.includes(city)) city = cities[0] || 'همه شهرها';
+      const regions = allCountry || isAllScope(city)
+        ? ['همه مناطق']
+        : (LOCATIONS[prov]?.[city] || ['همه مناطق']);
+      if (!regions.includes(reg)) reg = regions[0] || 'همه مناطق';
       showModal(`
         <h3 style="margin-top:0;">انتخاب محدوده جغرافیایی</h3>
+        <button id="loc-all-country" class="btn btn-gold btn-block" style="margin-bottom:12px;">🌍 نمایش همه کشور (سراسر ایران)</button>
         <div class="form-group">
           <label class="form-label">استان</label>
           <select id="loc-prov" class="select">
-            ${Object.keys(LOCATIONS).map((p) => `<option value="${esc(p)}" ${p === prov ? 'selected' : ''}>${esc(p)}</option>`).join('')}
+            ${provOptions.map((p) => `<option value="${esc(p)}" ${p === prov ? 'selected' : ''}>${esc(p)}</option>`).join('')}
           </select>
         </div>
         <div class="form-group">
           <label class="form-label">شهر</label>
-          <select id="loc-city" class="select">
+          <select id="loc-city" class="select" ${allCountry ? 'disabled' : ''}>
             ${cities.map((c) => `<option value="${esc(c)}" ${c === city ? 'selected' : ''}>${esc(c)}</option>`).join('')}
           </select>
         </div>
         <div class="form-group">
           <label class="form-label">منطقه</label>
-          <select id="loc-reg" class="select">
-            ${regions.map((r) => `<option value="${esc(r)}" ${r === state.region ? 'selected' : ''}>${esc(r)}</option>`).join('')}
+          <select id="loc-reg" class="select" ${allCountry || isAllScope(city) ? 'disabled' : ''}>
+            ${regions.map((r) => `<option value="${esc(r)}" ${r === reg ? 'selected' : ''}>${esc(r)}</option>`).join('')}
           </select>
         </div>
         <div class="row space-between">
@@ -2289,14 +2308,33 @@
           <button id="loc-save" class="btn btn-primary">تایید محدوده</button>
         </div>
       `);
+      document.getElementById('loc-all-country').onclick = () => {
+        state.province = 'همه کشور';
+        state.city = 'همه شهرها';
+        state.region = 'همه مناطق';
+        syncSessionWithServiceWorker(buildSwSessionPayload());
+        closeModal();
+        toast('نمایش روی همه کشور تنظیم شد.');
+        render();
+      };
       document.getElementById('loc-prov').onchange = (e) => {
         prov = e.target.value;
-        city = Object.keys(LOCATIONS[prov] || {})[0] || '';
+        if (isAllScope(prov)) {
+          city = 'همه شهرها';
+          reg = 'همه مناطق';
+        } else {
+          city = Object.keys(LOCATIONS[prov] || {})[0] || 'همه شهرها';
+          reg = 'همه مناطق';
+        }
         draw();
       };
       document.getElementById('loc-city').onchange = (e) => {
         city = e.target.value;
+        reg = 'همه مناطق';
         draw();
+      };
+      document.getElementById('loc-reg').onchange = (e) => {
+        reg = e.target.value;
       };
       document.getElementById('loc-save').onclick = () => {
         state.province = document.getElementById('loc-prov').value;
@@ -2879,18 +2917,27 @@
 
   // ==================== RENDER & EVENT BINDINGS ====================
 
+  let lastScrolledAdminTab = '';
+
   function bindSwipeNavigation() {
     const mainEl = document.getElementById('main-swipe-area');
     if (!mainEl) return;
     let startX = 0;
     let startY = 0;
+    let ignoreSwipe = false;
     mainEl.addEventListener('touchstart', (e) => {
       if (!e.changedTouches?.length) return;
+      const target = e.target;
+      ignoreSwipe = Boolean(
+        target &&
+        typeof target.closest === 'function' &&
+        target.closest('.store-hscroll, .header-segmented.admin-tabs, input, select, textarea, [data-no-swipe]')
+      );
       startX = e.changedTouches[0].clientX;
       startY = e.changedTouches[0].clientY;
     }, { passive: true });
     mainEl.addEventListener('touchend', (e) => {
-      if (!e.changedTouches?.length) return;
+      if (ignoreSwipe || !e.changedTouches?.length) return;
       const dx = e.changedTouches[0].clientX - startX;
       const dy = e.changedTouches[0].clientY - startY;
       if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.4) return;
@@ -3562,9 +3609,12 @@
       };
     });
 
-    const activeAdminTab = document.querySelector('#admin-tabs-strip .seg-tab.active');
-    if (activeAdminTab && activeAdminTab.scrollIntoView) {
-      activeAdminTab.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    if (state.adminTab !== lastScrolledAdminTab) {
+      lastScrolledAdminTab = state.adminTab;
+      const activeAdminTab = document.querySelector('#admin-tabs-strip .seg-tab.active');
+      if (activeAdminTab && activeAdminTab.scrollIntoView) {
+        activeAdminTab.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+      }
     }
   }
 

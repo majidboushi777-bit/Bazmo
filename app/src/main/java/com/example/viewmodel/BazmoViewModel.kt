@@ -223,8 +223,8 @@ data class BazmoUiState(
         val sessReg = BazmoLocations.normalizeZwnj(session.region)
         val normTier = BazmoLocations.normalizeZwnj(tier)
         return db.notifications.filter { n ->
-            val matchProv = BazmoLocations.isAllScope(n.province) || BazmoLocations.normalizeZwnj(n.province) == sessProv
-            val matchCity = BazmoLocations.isAllScope(n.city) || BazmoLocations.normalizeZwnj(n.city) == sessCity
+            val matchProv = BazmoLocations.isAllScope(n.province) || BazmoLocations.isAllScope(session.province) || BazmoLocations.normalizeZwnj(n.province) == sessProv
+            val matchCity = BazmoLocations.isAllScope(n.city) || BazmoLocations.isAllScope(session.city) || BazmoLocations.normalizeZwnj(n.city) == sessCity
             val matchRegion = BazmoLocations.isAllScope(n.region) || BazmoLocations.isAllScope(session.region) || BazmoLocations.normalizeZwnj(n.region) == sessReg
             val matchTier = session.isAdminUser || BazmoLocations.isAllScope(n.tierFilter) || BazmoLocations.normalizeZwnj(n.tierFilter) == normTier
             matchProv && matchCity && matchRegion && matchTier
@@ -642,7 +642,12 @@ class BazmoViewModel(
             )
         }
         syncBackgroundNotificationService()
-        showToast("موقعیت روی $city ($region) تنظیم شد")
+        val label = when {
+            BazmoLocations.isAllScope(province) -> "همه کشور"
+            BazmoLocations.isAllScope(city) -> "استان $province"
+            else -> "$city ($region)"
+        }
+        showToast("موقعیت روی $label تنظیم شد")
     }
 
     fun openModal(modal: BazmoModal) {
