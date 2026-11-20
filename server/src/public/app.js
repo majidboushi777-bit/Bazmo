@@ -872,9 +872,7 @@
             </button>
           </div>
           <div class="brand-badge">
-            <svg width="38" height="38" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <path d="M17 1.01L7 1c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-1.99-2-1.99zM17 19H7V5h10v14z"/>
-            </svg>
+            <img src="/bazmo-logo.jpg" alt="لوگوی بازمو" />
           </div>
           <h1 class="brand-title">بازمو</h1>
           <p class="brand-sub">شبکه یکپارچه و رسمی صنف موبایل ایران</p>
@@ -1071,12 +1069,34 @@
       if (!regions.includes(form.reg)) form.reg = regions[0] || 'همه مناطق';
 
       showModal(`
-        <h3 style="margin-top:0;">درخواست عضویت در بازمو</h3>
-        <div class="warn-box" style="text-align:right;">
-          <strong>⚠️ اطلاعیه مهم احراز هویت و تایید حساب همکاران</strong>
-          <div style="margin-top:4px;font-size:12px;line-height:1.7;">
-            پس از ثبت درخواست عضویت، تیم پشتیبانی بازمو شماره تماس و اطلاعات صنفی شما را بررسی کرده و حساب شما را فعال می‌کند.
+        <h3 style="margin-top:0;">📝 فرم درخواست عضویت در بازمو</h3>
+        <div class="warn-box" style="text-align:center;">
+          <div style="font-size:15px;font-weight:900;">⚠️ اطلاعیه مهم احراز هویت</div>
+          <div style="margin-top:6px;font-size:13.5px;font-weight:800;line-height:1.7;">
+            تایید شما فقط با احراز هویت ممکن است که به‌زودی همکاران ما جهت اطلاع از نحوه احراز با شما تماس خواهند گرفت.
           </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">نام و نام خانوادگی</label>
+          <input id="reg-name" class="input" placeholder="مثلاً: علی رضایی" value="${esc(form.name)}" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">ایمیل معتبر (نام کاربری جهت ورود)</label>
+          <input id="reg-email" class="input" type="email" dir="ltr" placeholder="name@example.com" value="${esc(form.email)}" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">شماره تماس جهت هماهنگی احراز هویت</label>
+          <input id="reg-phone" class="input" dir="ltr" placeholder="0912..." value="${esc(form.phone)}" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">رمز عبور دلخواه جهت ورود (حداقل ۶ کاراکتر)</label>
+          <input id="reg-pass" class="input" type="password" dir="ltr" value="${esc(form.pass)}" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">نقش صنفی درخواستی</label>
+          <select id="reg-tier" class="select">
+            ${ALL_ROLES.map((r) => `<option value="${esc(r)}" ${r === form.tier ? 'selected' : ''}>${esc(r)}</option>`).join('')}
+          </select>
         </div>
         <div class="grid" style="grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;">
           <div>
@@ -1099,29 +1119,7 @@
           </div>
         </div>
         <div class="form-group">
-          <label class="form-label">ایمیل معتبر جهت ورود</label>
-          <input id="reg-email" class="input" type="email" dir="ltr" placeholder="name@example.com" value="${esc(form.email)}" />
-        </div>
-        <div class="form-group">
-          <label class="form-label">رمز عبور انتخابی (جهت ورود پس از تایید، حداقل ۶ کاراکتر)</label>
-          <input id="reg-pass" class="input" type="password" dir="ltr" value="${esc(form.pass)}" />
-        </div>
-        <div class="form-group">
-          <label class="form-label">نام و نام خانوادگی</label>
-          <input id="reg-name" class="input" placeholder="مثلاً: علی رضایی" value="${esc(form.name)}" />
-        </div>
-        <div class="form-group">
-          <label class="form-label">شماره تماس / واتساپ</label>
-          <input id="reg-phone" class="input" dir="ltr" placeholder="0912..." value="${esc(form.phone)}" />
-        </div>
-        <div class="form-group">
-          <label class="form-label">نقش صنفی درخواستی</label>
-          <select id="reg-tier" class="select">
-            ${ALL_ROLES.map((r) => `<option value="${esc(r)}" ${r === form.tier ? 'selected' : ''}>${esc(r)}</option>`).join('')}
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">توضیحات / نام فروشگاه (اختیاری)</label>
+          <label class="form-label">توضیحات / نام فروشگاه / پاساژ (اختیاری)</label>
           <textarea id="reg-note" class="textarea" rows="2">${esc(form.note)}</textarea>
         </div>
         <div class="row space-between">
@@ -1225,9 +1223,7 @@
         <div class="header-row-1">
           <div class="header-brand">
             <div class="header-logo">
-              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <path d="M17 1.01L7 1c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-1.99-2-1.99zM17 19H7V5h10v14z"/>
-              </svg>
+              <img src="/bazmo-logo.jpg" alt="لوگوی بازمو" />
             </div>
             <div style="min-width:0;">
               <div class="header-title">${isAdminMode ? 'بازمو · پنل مدیریت' : 'بازمو'}</div>
@@ -1237,9 +1233,6 @@
 
           <div class="header-actions">
             ${!isAdminMode ? `
-              <button class="icon-btn" id="hdr-orders-btn" title="سفارش‌ها" aria-label="سفارش‌ها">
-                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 16.5c0 .38-.21.71-.53.88l-7.9 4.44c-.16.12-.36.18-.57.18-.21 0-.41-.06-.57-.18l-7.9-4.44A.991.991 0 013 16.5v-9c0-.38.21-.71.53-.88l7.9-4.44c.16-.12.36-.18.57-.18.21 0 .41.06.57.18l7.9 4.44c.32.17.53.5.53.88v9zM12 4.15L6.04 7.5 12 10.85l5.96-3.35L12 4.15z"/></svg>
-              </button>
               <button class="icon-btn" id="hdr-cart-btn" title="سبد خرید" aria-label="سبد خرید">
                 <svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49A1.003 1.003 0 0020 4H5.21l-.94-2H1zm16 16c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2z"/></svg>
                 ${cartCount > 0 ? `<span class="icon-badge gold">${toPersianNum(cartCount)}</span>` : ''}
@@ -1257,12 +1250,29 @@
                 ${!isAdminMode && pendingRegCount > 0 ? `<span class="icon-badge">${toPersianNum(pendingRegCount)}</span>` : ''}
               </button>
             ` : ''}
-            <button class="icon-btn" id="hdr-theme-btn" title="${isDarkTheme() ? 'حالت روشن' : 'حالت تاریک'}" aria-label="تغییر حالت روشن یا تاریک">
-              ${themeSvgIcon(isDarkTheme())}
-            </button>
-            <button class="icon-btn" id="hdr-logout-btn" title="خروج از حساب" aria-label="خروج">
-              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg>
-            </button>
+            <div class="header-desktop-actions">
+              ${!isAdminMode ? `
+                <button class="icon-btn" id="hdr-orders-btn" title="سفارش‌ها" aria-label="سفارش‌ها">
+                  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 16.5c0 .38-.21.71-.53.88l-7.9 4.44c-.16.12-.36.18-.57.18-.21 0-.41-.06-.57-.18l-7.9-4.44A.991.991 0 013 16.5v-9c0-.38.21-.71.53-.88l7.9-4.44c.16-.12.36-.18.57-.18.21 0 .41.06.57.18l7.9 4.44c.32.17.53.5.53.88v9zM12 4.15L6.04 7.5 12 10.85l5.96-3.35L12 4.15z"/></svg>
+                </button>
+              ` : ''}
+              <button class="icon-btn" id="hdr-theme-btn" title="${isDarkTheme() ? 'حالت روشن' : 'حالت تاریک'}" aria-label="تغییر حالت روشن یا تاریک">
+                ${themeSvgIcon(isDarkTheme())}
+              </button>
+              <button class="icon-btn" id="hdr-logout-btn" title="خروج از حساب" aria-label="خروج">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg>
+              </button>
+            </div>
+            <div class="header-more-wrap">
+              <button class="icon-btn" id="hdr-more-btn" title="سایر گزینه‌ها" aria-label="سایر گزینه‌ها">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+              </button>
+              <div class="header-more-menu" id="hdr-more-menu">
+                ${!isAdminMode ? `<button type="button" class="header-more-item" id="hdr-more-orders">📦 پیگیری سفارش‌ها</button>` : ''}
+                <button type="button" class="header-more-item" id="hdr-more-theme">${isDarkTheme() ? '☀️ حالت روشن' : '🌙 حالت تاریک'}</button>
+                <button type="button" class="header-more-item danger" id="hdr-more-logout">🚪 خروج از حساب</button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1479,19 +1489,19 @@
       (s) => s
     );
 
-    const brandAliases = {
-      'اپل': ['اپل', 'apple'],
-      'سامسونگ': ['سامسونگ', 'samsung'],
-      'شیائومی': ['شیائومی', 'xiaomi'],
-      'آنر': ['آنر', 'honor']
-    };
-    const brands = ['همه', 'اپل', 'سامسونگ', 'شیائومی', 'آنر'];
+    const brandCounts = new Map();
+    mobiles.forEach((m) => {
+      const b = String(m.brand || '').trim();
+      if (b) brandCounts.set(b, (brandCounts.get(b) || 0) + 1);
+    });
+    const brands = ['همه', ...Array.from(brandCounts.keys())];
     const filteredMobiles = mobiles.filter((m) => {
       const q = state.mobileSearch.trim().toLowerCase();
       const mBrandLower = String(m.brand || '').toLowerCase();
       const brandOk =
         state.mobileBrand === 'همه' ||
-        (brandAliases[state.mobileBrand] || [state.mobileBrand.toLowerCase()]).some((b) => mBrandLower.includes(b));
+        String(m.brand || '').trim() === state.mobileBrand ||
+        mBrandLower.includes(state.mobileBrand.toLowerCase());
       const searchOk = !q || m.model.toLowerCase().includes(q) || mBrandLower.includes(q);
       if (!brandOk || !searchOk) return false;
       if (state.mobileBudgetMax > 0) {
@@ -1507,25 +1517,30 @@
     );
 
     return `
-      <div class="row space-between" style="margin-bottom:10px;">
-        <input id="mob-search" class="input toolbar-search" placeholder="جستجوی مدل گوشی (مثلاً iPhone 15 یا A55)..." value="${esc(state.mobileSearch)}" />
-        <div class="row">
-          <select id="mob-budget" class="select" style="width:auto;min-width:160px;">
+      <div class="toolbar-card">
+        <div class="row space-between">
+          <input id="mob-search" class="input toolbar-search" placeholder="سرچ مدل گوشی یا برند (مثلاً iPhone 15 یا A55)..." value="${esc(state.mobileSearch)}" />
+          <select id="mob-budget" class="select" style="width:auto;min-width:165px;">
             <option value="0" ${state.mobileBudgetMax === 0 ? 'selected' : ''}>همه قیمت‌ها</option>
             <option value="25000000" ${state.mobileBudgetMax === 25000000 ? 'selected' : ''}>تا ۲۵ میلیون تومان</option>
             <option value="50000000" ${state.mobileBudgetMax === 50000000 ? 'selected' : ''}>تا ۵۰ میلیون تومان</option>
             <option value="85000000" ${state.mobileBudgetMax === 85000000 ? 'selected' : ''}>تا ۸۵ میلیون تومان</option>
           </select>
-          <button id="mob-post-ad-btn" class="btn btn-gold btn-sm">+ ثبت آگهی</button>
-          ${canCreateStoreInSection('mobile') ? `<button id="mob-add-store-btn" class="btn btn-navy btn-sm">+ ثبت فروشگاه</button>` : ''}
+        </div>
+        <div class="row">
+          <button id="mob-post-ad-btn" class="btn btn-primary btn-sm" style="flex:1;">+ ثبت آگهی موبایل</button>
+          ${canCreateStoreInSection('mobile') ? `<button id="mob-add-store-btn" class="btn btn-gold btn-sm" style="flex:1;">🏪 ثبت فروشگاه</button>` : ''}
         </div>
       </div>
 
-      <div class="chip-row">
-        ${brands.map((b) => `<button class="chip ${state.mobileBrand === b ? 'active' : ''}" data-mbrand="${esc(b)}">${esc(b)}</button>`).join('')}
-      </div>
-
       ${renderPromoBanners('mobile')}
+
+      <div class="chip-row">
+        ${brands.map((b) => {
+          const cnt = b === 'همه' ? mobiles.length : (brandCounts.get(b) || 0);
+          return `<button class="chip ${state.mobileBrand === b ? 'active' : ''}" data-mbrand="${esc(b)}">${esc(b)} (${toPersianNum(cnt)} مدل)</button>`;
+        }).join('')}
+      </div>
 
       <div class="section-header-title">
         <span>🏪 عمده‌فروشان و بنکداران (${esc(filteredStoresRes.scope)})</span>
@@ -1534,11 +1549,11 @@
       <div class="store-hscroll">
         ${filteredStoresRes.list.map((s) => `
           <div class="store-hcard" data-open-store="${esc(s.id)}" style="cursor:pointer;">
-            <div style="font-weight:800;font-size:14px;">${esc(s.name)}</div>
-            <div class="muted">${esc(s.province)} · ${esc(s.city)} (${esc(s.region)})</div>
+            <div style="font-weight:800;font-size:14px;">🏪 ${esc(s.name)}</div>
+            <div class="muted" style="margin-top:4px;">📍 ${esc(s.city)} (${esc(s.region)}) · ⭐ ${esc(s.rating)}</div>
             <div class="row space-between" style="margin-top:8px;">
-              <span class="badge badge-gold">★ ${esc(s.rating)}</span>
-              <span class="badge badge-blue">${esc(storeTypeLabel(s.type))}</span>
+              <span class="store-hcard-action">مشاهده لیست قیمت و موجودی</span>
+              <span class="badge badge-gold">${esc(storeTypeLabel(s.type))}</span>
             </div>
           </div>
         `).join('')}
@@ -1740,32 +1755,34 @@
           </div>
         </div>
         <div class="section-header-title"><span>کاشی مشکلات نرم‌افزاری (نمای تخصصی)</span></div>
-        <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(165px,1fr));">
+        <div class="square-tile-grid">
           ${problems.map((p) => `
-            <div class="card" style="opacity:0.68;text-align:center;">
-              <div style="font-size:28px;">${esc(p.iconEmoji)}</div>
-              <h4 style="margin:8px 0 4px;font-size:13.5px;">🔒 ${esc(p.title)}</h4>
-              <span class="muted">نیازمند نقش نرم‌افزارکار</span>
+            <div class="square-tile locked">
+              <div class="square-tile-icon">${esc(p.iconEmoji)}</div>
+              <div class="square-tile-title">🔒 ${esc(p.title)}</div>
             </div>
           `).join('')}
         </div>
       ` : ''}
 
       ${swAccess && state.swSection === 'home' ? `
-        <div class="row space-between" style="margin-bottom:12px;">
-          <input id="sw-search" class="input toolbar-search" placeholder="جستجوی مشکل یا عنوان آموزش (مثلاً اپل‌آیدی، شیائومی، FRP)..." value="${esc(state.swSearch)}" />
-          <button id="sw-add-tut-btn" class="btn btn-primary btn-sm">+ ثبت آموزش جدید</button>
+        <div class="toolbar-card">
+          <div class="row space-between">
+            <input id="sw-search" class="input toolbar-search" placeholder="جستجوی مشکل یا عنوان آموزش (مثلاً اپل‌آیدی، شیائومی، FRP)..." value="${esc(state.swSearch)}" />
+            <button id="sw-add-tut-btn" class="btn btn-gold btn-sm">+ فروش آموزش جدید</button>
+          </div>
         </div>
 
-        <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(165px,1fr));margin-bottom:14px;">
+        <div class="section-header-title"><span>کاشی مشکلات نرم‌افزاری</span></div>
+        <div class="square-tile-grid">
           ${problems.map((p) => {
             const cnt = tutorials.filter((t) => t.problemId === p.id).length;
             return `
-              <div class="card" data-open-swp="${esc(p.id)}" style="cursor:pointer;text-align:center;">
-                <div style="font-size:30px;">${esc(p.iconEmoji)}</div>
-                <h4 style="margin:8px 0 4px;font-size:13.5px;">${esc(p.title)}</h4>
+              <button type="button" class="square-tile" data-open-swp="${esc(p.id)}">
+                <div class="square-tile-icon">${esc(p.iconEmoji)}</div>
+                <div class="square-tile-title">${esc(p.title)}</div>
                 <span class="badge badge-blue">${toPersianNum(cnt)} آموزش</span>
-              </div>
+              </button>
             `;
           }).join('')}
         </div>
@@ -1783,7 +1800,7 @@
         <button class="btn btn-outline btn-sm" id="sw-back-home" style="margin-bottom:10px;">→ بازگشت به دسته‌بندی مشکلات</button>
         <div class="section-header-title">
           <span>${esc(problems.find((p) => p.id === state.swProblemId)?.title || 'آموزش‌های مرتبط')}</span>
-          <button id="sw-add-tut-btn" class="btn btn-primary btn-sm">+ ثبت آموزش در این بخش</button>
+          <button id="sw-add-tut-btn" class="btn btn-gold btn-sm">+ فروش آموزش در این بخش</button>
         </div>
         <div class="grid">
           ${tutorials
@@ -1794,9 +1811,11 @@
       ` : ''}
 
       ${state.swSection === 'boxes' ? `
-        <div class="row space-between" style="margin-bottom:10px;">
-          <input id="sw-search" class="input toolbar-search" placeholder="جستجوی باکس و دانگل..." value="${esc(state.swSearch)}" />
-          <button id="sw-add-box-btn" class="btn btn-primary btn-sm">+ ثبت آگهی باکس / دانگل</button>
+        <div class="toolbar-card">
+          <div class="row space-between">
+            <input id="sw-search" class="input toolbar-search" placeholder="جستجوی باکس و دانگل..." value="${esc(state.swSearch)}" />
+            <button id="sw-add-box-btn" class="btn btn-gold btn-sm">+ فروش باکس / دانگل</button>
+          </div>
         </div>
         <div class="grid">
           ${boxes
@@ -1837,7 +1856,7 @@
                 <span class="badge ${r.reply ? 'badge-green' : 'badge-gold'}">${esc(r.status)}</span>
               </div>
               <div class="muted">${esc(r.userName)} · ${esc(r.city)}</div>
-              ${r.reply ? `<div class="alert-success" style="margin-top:8px;margin-bottom:0;text-align:right;">پاسخ ادمین: ${esc(r.reply)}</div>` : ''}
+              ${r.reply ? `<div class="warranty-box">✅ پاسخ ادمین: ${esc(r.reply)}</div>` : ''}
             </div>
           `).join('')}
         </div>
@@ -1850,15 +1869,15 @@
       <div class="card">
         <div class="row space-between">
           <strong>🎓 ${esc(t.title)}</strong>
-          ${t.status === 'pending' ? '<span class="badge badge-gold">در انتظار تایید</span>' : '<span class="badge badge-gold">★ ' + esc(t.rating) + '</span>'}
+          ${t.status === 'pending' ? '<span class="badge badge-gold">در انتظار تایید</span>' : '<span class="badge badge-green">⭐ ' + esc(t.rating) + '</span>'}
         </div>
         <div class="muted" style="margin-top:4px;">مدرس: ${esc(t.teacher)} · شهر: ${esc(t.city)}</div>
-        <div class="muted">شرایط: ${esc(t.terms)}</div>
+        <div class="warranty-box">📌 شرایط: ${esc(t.terms)}</div>
         <div class="row space-between" style="margin-top:10px;">
           <span class="price-tag">${formatToman(t.price)}</span>
           <div class="row">
             ${t.ownerId === state.session.uid ? `<button class="btn btn-danger btn-sm" data-del-tut="${esc(t.id)}">حذف</button>` : ''}
-            <button class="btn btn-primary btn-sm" data-buy-tut="${esc(t.id)}">خرید دوره</button>
+            <button class="btn btn-primary btn-sm" data-buy-tut="${esc(t.id)}">خرید آموزش</button>
           </div>
         </div>
       </div>
@@ -1891,57 +1910,63 @@
     );
 
     return `
-      <div class="row space-between" style="margin-bottom:10px;">
-        <input id="acc-search" class="input toolbar-search" placeholder="جستجوی لوازم جانبی (گارد، گلس، شارژر)..." value="${esc(state.accSearch)}" />
+      <div class="toolbar-card">
+        <input id="acc-search" class="input" placeholder="جستجوی لوازم جانبی (گارد، گلس، شارژر)..." value="${esc(state.accSearch)}" />
         <div class="row">
-          <button id="acc-post-ad-btn" class="btn btn-gold btn-sm">+ ثبت آگهی</button>
-          ${canCreateStoreInSection('acc') ? `<button id="acc-add-store-btn" class="btn btn-navy btn-sm">+ ثبت فروشگاه</button>` : ''}
+          <button id="acc-post-ad-btn" class="btn btn-primary btn-sm" style="flex:1;">+ ثبت آگهی جانبی</button>
+          ${canCreateStoreInSection('acc') ? `<button id="acc-add-store-btn" class="btn btn-gold btn-sm" style="flex:1;">🏪 ثبت فروشگاه</button>` : ''}
         </div>
       </div>
+
+      ${renderPromoBanners('acc')}
 
       <div class="chip-row">
         ${cats.map((c) => `<button class="chip ${state.accCat === c ? 'active' : ''}" data-acat="${esc(c)}">${esc(c)}</button>`).join('')}
       </div>
 
-      ${renderPromoBanners('acc')}
-
       <div class="section-header-title">
         <span>🏪 پخش‌کنندگان و بنکداران جانبی (${esc(accStoresRes.scope)})</span>
-        ${state.accFilterStoreId ? `<button id="acc-clear-store-filter" class="btn btn-outline btn-sm">نمایش همه فروشگاه‌ها</button>` : ''}
+        ${state.accFilterStoreId ? `<button id="acc-clear-store-filter" class="btn btn-outline btn-sm">نمایش همه</button>` : ''}
       </div>
       <div class="store-hscroll">
         ${accStoresRes.list.map((s) => {
           const isSel = state.accFilterStoreId === s.id;
           return `
-            <div class="store-hcard" data-acc-store="${esc(s.id)}" style="cursor:pointer;${isSel ? 'border:2px solid var(--navy);background:var(--navy-soft);' : ''}">
-              <div style="font-weight:800;font-size:14px;">${esc(s.name)}</div>
-              <div class="muted">${esc(s.province)} · ${esc(s.city)} (${esc(s.region)})</div>
+            <div class="store-hcard ${isSel ? 'active' : ''}" data-acc-store="${esc(s.id)}" style="cursor:pointer;">
+              <div style="font-weight:800;font-size:14px;">🏪 ${esc(s.name)}</div>
+              <div class="muted" style="margin-top:4px;">📍 ${esc(s.city)} (${esc(s.region)}) · ⭐ ${esc(s.rating)}</div>
               <div class="row space-between" style="margin-top:8px;">
-                <span class="badge badge-gold">★ ${esc(s.rating)}</span>
-                <span class="muted">${isSel ? '✓ فیلتر فعال' : 'فیلتر محصولات'}</span>
+                <span class="store-hcard-action">${isSel ? '✓ فیلتر فعال' : 'فیلتر کالاهای فروشگاه'}</span>
               </div>
             </div>
           `;
         }).join('')}
       </div>
 
-      <div class="section-header-title"><span>محصولات و لوازم جانبی</span></div>
+      <div class="section-header-title">
+        <span>محصولات جانبی</span>
+        <span class="badge badge-blue">${toPersianNum(filtered.length)} کالا</span>
+      </div>
       <div class="grid">
         ${filtered.map((a) => {
           const st = stores.find((s) => s.id === a.storeId);
+          const myInq = inquiries.find((q) => q.accId === a.id && q.userId === state.session.uid);
           return `
             <div class="card">
-              <span class="badge badge-blue">${esc(a.cat)}</span>
+              <div class="row space-between">
+                <span class="badge badge-blue">${esc(a.cat)}</span>
+                <span class="muted">🏪 ${esc(st?.name || 'بنکدار جانبی')}</span>
+              </div>
               <h3 style="margin:8px 0 4px;font-size:15px;">${esc(a.name)}</h3>
               <div class="muted">${esc(a.desc)}</div>
-              <div class="muted" style="margin-top:4px;">تامین‌کننده: ${esc(st?.name || 'بنکدار جانبی')} (${esc(st?.city || '')})</div>
               <div class="row space-between" style="margin-top:10px;">
                 <span class="price-tag">${formatToman(a.price)}</span>
                 <div class="row">
-                  <button class="btn btn-outline btn-sm" data-inquire-acc="${esc(a.id)}">استعلام موجودی</button>
-                  <button class="btn btn-primary btn-sm" data-buy-acc="${esc(a.id)}">خرید عمده</button>
+                  <button class="btn btn-gold btn-sm" data-inquire-acc="${esc(a.id)}">🔔 استعلام</button>
+                  <button class="btn btn-primary btn-sm" data-buy-acc="${esc(a.id)}">🛒 خرید</button>
                 </div>
               </div>
+              ${myInq ? `<div class="warranty-box">وضعیت استعلام: ${esc(myInq.status)}</div>` : ''}
             </div>
           `;
         }).join('')}
@@ -1963,7 +1988,10 @@
       ` : ''}
 
       ${accUserAds.length ? `
-        <div class="section-header-title" style="margin-top:18px;"><span>📣 آگهی‌های همکاران در بخش جانبی</span></div>
+        <div class="section-header-title" style="margin-top:18px;">
+          <span>📣 آگهی‌های جانبی همکاران</span>
+          <span class="badge badge-gold">${toPersianNum(accUserAds.length)} آگهی</span>
+        </div>
         <div class="grid">
           ${accUserAds.map((a) => `
             <div class="card">
@@ -1972,10 +2000,14 @@
                 ${a.status === 'pending' ? '<span class="badge badge-gold">در انتظار تایید</span>' : '<span class="badge badge-green">تاییدشده</span>'}
               </div>
               <h4 style="margin:8px 0 4px;">${esc(a.title)}</h4>
-              <div class="muted">${esc(a.seller)} · ${esc(a.city)}</div>
+              <div class="muted">🏪 ${esc(a.seller)} · 📍 ${esc(a.city)}</div>
+              ${a.desc ? `<div class="muted" style="margin-top:4px;">${esc(a.desc)}</div>` : ''}
               <div class="row space-between" style="margin-top:10px;">
                 <span class="price-tag">${formatToman(a.price)}</span>
-                <button class="btn btn-primary btn-sm" data-buy-hw="${esc(a.id)}">خرید</button>
+                <div class="row">
+                  <button class="btn btn-navy btn-sm" data-chat-ad="${esc(a.id)}">💬 چت</button>
+                  <button class="btn btn-primary btn-sm" data-buy-hw="${esc(a.id)}">🛒 خرید</button>
+                </div>
               </div>
             </div>
           `).join('')}
@@ -2019,7 +2051,8 @@
             <div class="muted">برند/مدل: ${esc(ad.brand)} ${esc(ad.model)} (${esc(ad.series)})</div>
             <div class="muted">فروشنده: ${esc(ad.seller)} · ${esc(ad.province)} - ${esc(ad.city)} (${esc(ad.region || 'همه مناطق')})</div>
             <p style="margin:12px 0;">${esc(ad.desc || 'بدون توضیحات تکمیلی')}</p>
-            <div class="row space-between" style="padding-top:10px;border-top:1px solid var(--border);">
+            <div class="warranty-box">🏪 فروشنده: ${esc(ad.seller)} ${ad.phone ? `| 📞 ${esc(ad.phone)}` : ''}</div>
+            <div class="row space-between" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
               <span class="price-tag" style="font-size:18px;">${formatToman(ad.price)}</span>
               <div class="row">
                 ${ad.phone ? `<a class="btn btn-outline" href="tel:${esc(ad.phone)}">📞 تماس مستقیم</a>` : ''}
@@ -2041,7 +2074,8 @@
         (state.hwCat === 'همه' || a.cat === state.hwCat) &&
         (!state.hwSearch.trim() ||
           a.title.toLowerCase().includes(state.hwSearch.toLowerCase()) ||
-          a.model.toLowerCase().includes(state.hwSearch.toLowerCase()))
+          a.model.toLowerCase().includes(state.hwSearch.toLowerCase()) ||
+          String(a.series || '').toLowerCase().includes(state.hwSearch.toLowerCase()))
     );
     const locAdsRes = filterByLocation(visibleAds, state.province, state.city, state.region, (a) => a);
 
@@ -2050,51 +2084,57 @@
         <button class="sub-tab ${state.hwSection === 'home' ? 'active' : ''}" data-hwsec="home">بازار قطعات</button>
         <button class="sub-tab ${state.hwSection === 'my_ads' ? 'active' : ''}" data-hwsec="my_ads">آگهی‌های من (${toPersianNum(myAds.length)})</button>
         <button class="sub-tab ${state.hwSection === 'special_req' ? 'active' : ''}" data-hwsec="special_req">درخواست قطعه</button>
-        <button class="sub-tab" data-hwsec="forum">💬 انجمن سخت‌افزار</button>
+        <button class="sub-tab" data-hwsec="forum">${canAccessHardwareBoard() ? '💬 انجمن سخت‌افزار' : '🔒 انجمن سخت‌افزار'}</button>
       </div>
 
       ${renderPromoBanners('hw')}
 
       ${state.hwSection === 'home' ? `
-        <div class="row space-between" style="margin-bottom:10px;">
-          <input id="hw-search" class="input toolbar-search" placeholder="جستجوی قطعه، آی‌سی، فلت یا مدل گوشی..." value="${esc(state.hwSearch)}" />
+        <div class="toolbar-card">
+          <input id="hw-search" class="input" placeholder="سرچ تخصصی قطعه، کد آی‌سی، فلت یا مدل..." value="${esc(state.hwSearch)}" />
           <div class="row">
-            <button id="hw-new-ad-btn" class="btn btn-primary btn-sm">+ ثبت آگهی قطعه</button>
-            ${canCreateStoreInSection('hw') ? `<button id="hw-add-store-btn" class="btn btn-navy btn-sm">+ ثبت فروشگاه قطعات</button>` : ''}
+            <button id="hw-new-ad-btn" class="btn btn-primary btn-sm" style="flex:1;">+ ثبت آگهی قطعه</button>
+            ${canCreateStoreInSection('hw') ? `<button id="hw-add-store-btn" class="btn btn-gold btn-sm" style="flex:1;">🏪 ثبت فروشگاه قطعات</button>` : ''}
           </div>
         </div>
 
-        <div class="section-header-title">
-          <span>🏪 فروشگاه‌های قطعات سخت‌افزار (${esc(hwStoresRes.scope)})</span>
-        </div>
-        <div class="store-hscroll">
-          ${hwStoresRes.list.map((s) => `
-            <div class="store-hcard" data-open-store="${esc(s.id)}" style="cursor:pointer;">
-              <div style="font-weight:800;font-size:14px;">${esc(s.name)}</div>
-              <div class="muted">${esc(s.city)} (${esc(s.region)})</div>
-              <div class="row space-between" style="margin-top:8px;">
-                <span class="badge badge-gold">★ ${esc(s.rating)}</span>
-                <span class="badge badge-blue">${esc(storeTypeLabel(s.type))}</span>
+        ${hwStoresRes.list.length ? `
+          <div class="section-header-title">
+            <span>🏪 فروشگاه‌های تأمین قطعات (${esc(hwStoresRes.scope)})</span>
+            <span class="badge badge-blue">${toPersianNum(hwStoresRes.list.length)} فروشگاه</span>
+          </div>
+          <div class="store-hscroll">
+            ${hwStoresRes.list.map((s) => `
+              <div class="store-hcard" data-open-store="${esc(s.id)}" style="cursor:pointer;">
+                <div style="font-weight:800;font-size:14px;">🏪 ${esc(s.name)}</div>
+                <div class="muted" style="margin-top:4px;">📍 ${esc(s.city)} (${esc(s.region)}) · ⭐ ${esc(s.rating)}</div>
+                <div class="row space-between" style="margin-top:8px;">
+                  <span class="store-hcard-action">مشاهده فروشگاه و تماس</span>
+                  <span class="badge badge-gold">${esc(storeTypeLabel(s.type))}</span>
+                </div>
               </div>
-            </div>
-          `).join('')}
-        </div>
+            `).join('')}
+          </div>
+        ` : ''}
 
-        <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(130px,1fr));margin-bottom:12px;">
-          ${hwCategories.map((c) => `
-            <div class="card" data-hcat="${esc(c.name)}" style="cursor:pointer;text-align:center;padding:10px;${state.hwCat === c.name ? 'border:2px solid var(--navy);background:var(--navy-soft);' : ''}">
-              <div style="font-size:22px;">${esc(c.iconEmoji)}</div>
-              <div style="font-size:12px;font-weight:800;margin-top:4px;">${esc(c.name)}</div>
-            </div>
-          `).join('')}
+        <div class="section-header-title">
+          <span>دسته‌بندی قطعات</span>
+          ${state.hwCat !== 'همه' ? `<button class="btn btn-outline btn-sm" data-hcat="همه">همه</button>` : ''}
         </div>
-
-        <div class="chip-row">
-          ${cats.map((c) => `<button class="chip ${state.hwCat === c ? 'active' : ''}" data-hcat="${esc(c)}">${esc(c)}</button>`).join('')}
+        <div class="square-tile-grid">
+          ${hwCategories.map((c) => {
+            const active = state.hwCat === c.name;
+            return `
+              <button type="button" class="square-tile ${active ? 'active' : ''}" data-hcat="${esc(active ? 'همه' : c.name)}">
+                <div class="square-tile-icon">${esc(c.iconEmoji)}</div>
+                <div class="square-tile-title">${esc(c.name)}</div>
+              </button>
+            `;
+          }).join('')}
         </div>
 
         <div class="section-header-title">
-          <span>آگهی‌های سخت‌افزار (${esc(locAdsRes.scope)})</span>
+          <span>آگهی‌های قطعات (${esc(locAdsRes.scope)})</span>
           <span class="muted">${toPersianNum(locAdsRes.list.length)} آگهی</span>
         </div>
         <div class="grid">
@@ -2162,7 +2202,7 @@
                 <span class="badge ${r.note ? 'badge-green' : 'badge-gold'}">${esc(r.status)}</span>
               </div>
               <div class="muted">سریال/پارت: ${esc(r.series || '-')} · ${esc(r.city)}</div>
-              ${r.note ? `<div class="alert-success" style="margin-top:8px;margin-bottom:0;text-align:right;">پاسخ همکار / ادمین: ${esc(r.note)}</div>` : ''}
+              ${r.note ? `<div class="warranty-box">📢 پاسخ ادمین: ${esc(r.note)}</div>` : ''}
             </div>
           `).join('')}
         </div>
@@ -3289,9 +3329,9 @@
           </div>
         `).join('') || '<p class="muted">سبد خرید خالی است.</p>'}
         ${state.cart.length ? `
-          <div class="row" style="margin:10px 0;">
-            <button class="chip ${deliveryType === 'پیک' ? 'active' : ''}" id="deliv-courier">🛵 ارسال با پیک</button>
-            <button class="chip ${deliveryType === 'حضوری' ? 'active' : ''}" id="deliv-pickup">🏪 تحویل حضوری</button>
+          <div class="segmented-toggle">
+            <button type="button" class="segmented-toggle-btn ${deliveryType === 'پیک' ? 'active' : ''}" id="deliv-courier">🛵 ارسال با پیک</button>
+            <button type="button" class="segmented-toggle-btn ${deliveryType === 'حضوری' ? 'active' : ''}" id="deliv-pickup">🏪 تحویل حضوری</button>
           </div>
           ${deliveryType === 'پیک' ? `
             <div class="form-group"><input id="ord-cust-name" class="input" placeholder="نام تحویل‌گیرنده" value="${esc(state.session.user?.fullName || '')}" /></div>
@@ -4155,7 +4195,7 @@
               <h3 style="margin:8px 0 4px;font-size:15px;">${esc(d.title)}</h3>
               <div class="muted">🏪 ${esc(d.storeName || 'فروشگاه همکار')} · 📍 ${esc(d.city)} (${esc(d.region)})</div>
               ${d.cooperationModel ? `<div style="margin-top:6px;font-size:12.5px;font-weight:700;color:var(--navy);">🤝 ${esc(d.cooperationModel)}</div>` : ''}
-              ${d.equipment ? `<div class="muted" style="margin-top:4px;">🔧 تجهیزات: ${esc(d.equipment)}</div>` : ''}
+              ${d.equipment ? `<div class="warranty-box">🔧 تجهیزات: ${esc(d.equipment)}</div>` : ''}
               ${d.desc ? `<p class="muted" style="margin:6px 0 0;">${esc(d.desc)}</p>` : ''}
               <div class="row space-between" style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border);">
                 <div>
@@ -4191,6 +4231,7 @@
                 <div class="row">
                   ${r.requesterPhone ? `<a class="btn btn-outline btn-sm" href="tel:${esc(r.requesterPhone)}">📞 تماس</a>` : ''}
                   <button class="btn btn-navy btn-sm" data-chat-generic="${esc(r.id)}|${esc(r.title)}|${esc(r.requesterName)}|${esc(r.ownerId)}">💬 چت</button>
+                  ${(r.ownerId === state.session.uid || state.session.isAdmin) && r.status === 'open' ? `<button class="btn btn-success btn-sm" data-desk-req-done="${esc(r.id)}">✓ توافق شد</button>` : ''}
                   ${(r.ownerId === state.session.uid || state.session.isAdmin) ? `<button class="btn btn-danger btn-sm" data-del-desk-req="${esc(r.id)}">حذف</button>` : ''}
                 </div>
               </div>
@@ -4751,6 +4792,31 @@
     const themeBtn = document.getElementById('hdr-theme-btn');
     if (themeBtn) themeBtn.onclick = toggleTheme;
 
+    const moreBtn = document.getElementById('hdr-more-btn');
+    const moreMenu = document.getElementById('hdr-more-menu');
+    if (moreBtn && moreMenu) {
+      moreBtn.onclick = (e) => {
+        e.stopPropagation();
+        moreMenu.classList.toggle('open');
+      };
+      if (!window.__bazmoMoreOutsideBound) {
+        window.__bazmoMoreOutsideBound = true;
+        document.addEventListener('click', (e) => {
+          const menu = document.getElementById('hdr-more-menu');
+          const btn = document.getElementById('hdr-more-btn');
+          if (menu && menu.classList.contains('open') && !menu.contains(e.target) && !btn?.contains(e.target)) {
+            menu.classList.remove('open');
+          }
+        });
+      }
+    }
+    const moreOrdersBtn = document.getElementById('hdr-more-orders');
+    if (moreOrdersBtn) moreOrdersBtn.onclick = () => { moreMenu?.classList.remove('open'); openOrdersModal(); };
+    const moreThemeBtn = document.getElementById('hdr-more-theme');
+    if (moreThemeBtn) moreThemeBtn.onclick = () => { moreMenu?.classList.remove('open'); toggleTheme(); };
+    const moreLogoutBtn = document.getElementById('hdr-more-logout');
+    if (moreLogoutBtn) moreLogoutBtn.onclick = () => { moreMenu?.classList.remove('open'); logoutLocal(); render(); };
+
     const modeBtn = document.getElementById('hdr-mode-btn');
     if (modeBtn) modeBtn.onclick = () => { state.mode = state.mode === 'admin' ? 'user' : 'admin'; state._resetScrollNext = true; render(); };
 
@@ -4864,6 +4930,17 @@
     });
     document.querySelectorAll('[data-del-desk-rental]').forEach((b) => {
       b.onclick = async () => { await api(`/api/desk-rentals/${b.dataset.delDeskRental}`, { method: 'DELETE' }); await loadAppState(true); };
+    });
+    document.querySelectorAll('[data-desk-req-done]').forEach((b) => {
+      b.onclick = async () => {
+        try {
+          await api(`/api/desk-requests/${b.dataset.deskReqDone}/status`, { method: 'PATCH', body: { status: 'matched' } });
+          toast('وضعیت درخواست به «توافق شده» تغییر یافت.');
+          await loadAppState(true);
+        } catch (err) {
+          toast(err.message || 'خطا در ثبت وضعیت توافق');
+        }
+      };
     });
     document.querySelectorAll('[data-del-desk-req]').forEach((b) => {
       b.onclick = async () => { await api(`/api/desk-requests/${b.dataset.delDeskReq}`, { method: 'DELETE' }); await loadAppState(true); };

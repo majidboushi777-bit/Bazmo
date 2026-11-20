@@ -11,6 +11,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.fragment.app.FragmentActivity
 import androidx.test.core.app.ApplicationProvider
+import com.example.data.AccessoryEntity
 import com.example.data.AdminUsersWrapper
 import com.example.data.BackgroundNotifConfig
 import com.example.data.BazmoAuthResponse
@@ -22,15 +23,20 @@ import com.example.data.BazmoRoles
 import com.example.data.BazmoSeedData
 import com.example.data.BazmoServerConfig
 import com.example.data.BazmoSessionUser
+import com.example.data.BoxEntity
 import com.example.data.DeskRentalEntity
 import com.example.data.DeskRequestEntity
 import com.example.data.HwAdEntity
+import com.example.data.HwCategoryEntity
 import com.example.data.NotificationsWrapper
 import com.example.data.OrderEntity
 import com.example.data.RegistrationRequestEntity
 import com.example.data.StoreEntity
+import com.example.data.SwProblemEntity
+import com.example.data.TutorialEntity
 import com.example.data.UserEntity
 import com.example.data.UserWrapper
+import com.example.ui.screens.AccessoriesTabScreen
 import com.example.ui.screens.AdminShellScreen
 import com.example.ui.screens.DeskRentalScreen
 import com.example.ui.screens.ForumScreen
@@ -38,6 +44,7 @@ import com.example.ui.screens.HardwareTabScreen
 import com.example.ui.screens.LoginScreen
 import com.example.ui.screens.MobileTabScreen
 import com.example.ui.screens.MyStoreScreen
+import com.example.ui.screens.SoftwareTabScreen
 import com.example.ui.screens.UserShellScreen
 import com.example.ui.theme.BazmoTheme
 import com.example.viewmodel.AdminTab
@@ -46,11 +53,14 @@ import com.example.viewmodel.BazmoModal
 import com.example.viewmodel.BazmoSessionState
 import com.example.viewmodel.BazmoUiState
 import com.example.viewmodel.BazmoViewModel
+import com.example.viewmodel.CartItem
 import com.example.viewmodel.ForumUiFilter
 import com.example.viewmodel.HardwareSubMode
 import com.example.viewmodel.HwUiFilter
 import com.example.viewmodel.MobileSubMode
 import com.example.viewmodel.MobileUiFilter
+import com.example.viewmodel.SoftwareSubMode
+import com.example.viewmodel.SwUiFilter
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -363,5 +373,114 @@ class BazmoCrashRegressionTest {
         assertNotNull(userWrapper)
         val notifWrapper = moshi.adapter(NotificationsWrapper::class.java).fromJson("""{"notifications":[]}""")
         assertNotNull(notifWrapper)
+    }
+
+    @Test
+    fun `unified subtabs, store detail, and modals render cleanly without crash`() {
+        val vm = testViewModel(isAdmin = false)
+        val hwStore = StoreEntity(
+            id = "st_hw_1",
+            name = "فروشگاه قطعات تست",
+            province = "تهران",
+            city = "تهران",
+            region = "مرکز",
+            phone = "09120000000",
+            address = "خیابان جمهوری",
+            hours = "۹ تا ۲۰",
+            type = "hw",
+            ownerId = "u_hw",
+            status = "approved"
+        )
+        val pendingOwnedAd = HwAdEntity(
+            id = "ad_pending_1",
+            cat = "تاچ و ال‌سی‌دی",
+            title = "ال‌سی‌دی تست در انتظار",
+            brand = "Apple",
+            model = "iPhone 13",
+            series = "A2633",
+            price = 4_500_000L,
+            seller = "فروشگاه قطعات تست",
+            phone = "09120000000",
+            province = "تهران",
+            city = "تهران",
+            region = "مرکز",
+            ownerId = "u_hw",
+            status = "pending",
+            section = "hw"
+        )
+        val db = BazmoDbState(
+            stores = listOf(hwStore),
+            hwCategories = listOf(HwCategoryEntity(id = "c1", name = "تاچ و ال‌سی‌دی", iconEmoji = "📱")),
+            hwAds = listOf(pendingOwnedAd),
+            swProblems = listOf(SwProblemEntity(id = "p1", title = "FRP و آنلاک", iconEmoji = "🔓")),
+            tutorials = listOf(TutorialEntity(id = "t1", problemId = "p1", title = "آموزش تست", teacher = "استاد", price = 200_000L, terms = "آنلاین", city = "تهران", status = "approved")),
+            boxes = listOf(BoxEntity(id = "b1", name = "باکس تست", price = 3_000_000L, seller = "فروشنده", city = "تهران", condition = "نو", status = "approved")),
+            accessories = listOf(AccessoryEntity(id = "a1", cat = "کابل و آداپتور", name = "کابل فست", storeId = "st_hw_1", price = 150_000L, desc = "اصلی"))
+        )
+        val baseSession = BazmoSessionState(
+            role = AppRole.USER,
+            isAdminUser = false,
+            currentUser = UserEntity(id = "u_hw", uid = "u_hw", fullName = "علی رضایی", phone = "09120000000", tier = BazmoRoles.REPAIR_TECH),
+            cart = listOf(CartItem("i1", "کابل فست", 150_000L, "فروشگاه قطعات تست", 1))
+        )
+        var step by mutableIntStateOf(0)
+
+        composeRule.setContent {
+            BazmoTheme {
+                when (step) {
+                    0 -> SoftwareTabScreen(
+                        state = BazmoUiState(isReady = true, currentUid = "u_hw", db = db, session = baseSession),
+                        viewModel = vm
+                    )
+                    1 -> SoftwareTabScreen(
+                        state = BazmoUiState(
+                            isReady = true,
+                            currentUid = "u_hw",
+                            db = db,
+                            session = baseSession.copy(swView = SwUiFilter(mode = SoftwareSubMode.BOXES))
+                        ),
+                        viewModel = vm
+                    )
+                    2 -> HardwareTabScreen(
+                        state = BazmoUiState(
+                            isReady = true,
+                            currentUid = "u_hw",
+                            db = db,
+                            session = baseSession.copy(hwView = HwUiFilter(mode = HardwareSubMode.STORE_DETAIL, storeId = hwStore.id))
+                        ),
+                        viewModel = vm
+                    )
+                    3 -> HardwareTabScreen(
+                        state = BazmoUiState(
+                            isReady = true,
+                            currentUid = "u_hw",
+                            db = db,
+                            session = baseSession.copy(hwView = HwUiFilter(mode = HardwareSubMode.STORE_DETAIL, storeId = "missing_store"))
+                        ),
+                        viewModel = vm
+                    )
+                    4 -> AccessoriesTabScreen(
+                        state = BazmoUiState(isReady = true, currentUid = "u_hw", db = db, session = baseSession),
+                        viewModel = vm
+                    )
+                    5 -> UserShellScreen(
+                        state = BazmoUiState(isReady = true, currentUid = "u_hw", db = db, session = baseSession.copy(modal = BazmoModal.Cart)),
+                        viewModel = vm,
+                        onSignOut = {}
+                    )
+                    else -> UserShellScreen(
+                        state = BazmoUiState(isReady = true, currentUid = "u_hw", db = db, session = baseSession.copy(modal = BazmoModal.ProfileSetup)),
+                        viewModel = vm,
+                        onSignOut = {}
+                    )
+                }
+            }
+        }
+
+        for (i in 0..6) {
+            composeRule.runOnUiThread { step = i }
+            composeRule.waitForIdle()
+        }
+        composeRule.onNodeWithTag("profile_locked_address_box").assertExists()
     }
 }

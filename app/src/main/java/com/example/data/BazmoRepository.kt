@@ -479,6 +479,17 @@ class BazmoRepository(
         )
     )
 
+    suspend fun changeOwnPassword(
+        password: String
+    ): Result<Unit> = executeJsonMutation(
+        method = "POST",
+        path = "/api/users/me/password",
+        operationType = OperationType.UPDATE,
+        bodyMap = mapOf(
+            "password" to password
+        )
+    )
+
     suspend fun seedInitialMarketplaceIfEmpty(adminUid: String): Result<Boolean> =
         Result.success(false) // Handled automatically on Weblines server startup & admin session
 

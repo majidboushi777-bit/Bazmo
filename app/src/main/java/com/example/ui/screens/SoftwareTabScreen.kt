@@ -6,10 +6,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -18,25 +15,19 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.example.data.TutorialEntity
 import com.example.data.formatToman
 import com.example.ui.components.BadgeTone
 import com.example.ui.components.BazmoBackBar
@@ -49,12 +40,11 @@ import com.example.ui.components.BazmoPromoBannerGrid
 import com.example.ui.components.BazmoSearchBar
 import com.example.ui.components.BazmoSectionHeader
 import com.example.ui.components.BazmoSquareTile
+import com.example.ui.components.BazmoSubTabBar
+import com.example.ui.components.BazmoSubTabItem
 import com.example.ui.components.BazmoWarrantyBox
-import com.example.ui.theme.HeaderBgDeep
-import com.example.ui.theme.HeaderBgLight
 import com.example.ui.theme.Navy
 import com.example.ui.theme.NavyDeep
-import com.example.ui.theme.NavyLight
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.viewmodel.BazmoModal
@@ -71,6 +61,29 @@ fun SoftwareTabScreen(
     val uriHandler = LocalUriHandler.current
     val swBanners = remember(state.db.banners, state.session.province, state.session.city, state.session.region) {
         state.bannersForSection("software")
+    }
+    val canSpecialized = state.canAccessSoftwareSpecialized
+    val subTabs = remember(canSpecialized) {
+        listOf(
+            BazmoSubTabItem("home", if (canSpecialized) "آموزش‌ها" else "🔒 آموزش‌ها"),
+            BazmoSubTabItem("boxes", "🧰 باکس و دانگل"),
+            BazmoSubTabItem("req", "📋 درخواست‌ها"),
+            BazmoSubTabItem("forum", if (canSpecialized) "💬 انجمن" else "🔒 انجمن")
+        )
+    }
+    val selectedSubKey = when (sw.mode) {
+        SoftwareSubMode.BOXES -> "boxes"
+        SoftwareSubMode.REQUESTS -> "req"
+        SoftwareSubMode.FORUM -> "forum"
+        SoftwareSubMode.HOME, SoftwareSubMode.PROBLEM, SoftwareSubMode.TUTORIALS -> "home"
+    }
+    val onSelectSubTab: (String) -> Unit = { key ->
+        when (key) {
+            "home" -> viewModel.setSwMode(SoftwareSubMode.HOME)
+            "boxes" -> viewModel.setSwMode(SoftwareSubMode.BOXES)
+            "req" -> viewModel.setSwMode(SoftwareSubMode.REQUESTS)
+            "forum" -> viewModel.setSwMode(SoftwareSubMode.FORUM)
+        }
     }
 
     BackHandler(enabled = sw.mode != SoftwareSubMode.HOME && sw.mode != SoftwareSubMode.FORUM) {
@@ -98,8 +111,7 @@ fun SoftwareTabScreen(
                         board = "software",
                         state = state,
                         viewModel = viewModel,
-                        onBack = { viewModel.setSwMode(SoftwareSubMode.HOME) },
-                        bottomContent = { SoftwareBottomDock(state, viewModel) }
+                        onBack = { viewModel.setSwMode(SoftwareSubMode.HOME) }
                     )
                 }
 
@@ -107,13 +119,14 @@ fun SoftwareTabScreen(
                     val prob = remember(state.db.swProblems, sw.problemId) {
                         state.db.swProblems.find { it.id == sw.problemId }
                     }
-                    val canViewTutorials = state.canAccessSoftwareSpecialized
-                    val list = remember(state.db.tutorials, canViewTutorials, sw.problemId, sw.search) {
-                        if (canViewTutorials) {
+                    val list = remember(state.db.tutorials, canSpecialized, state.currentUid, sw.problemId, sw.search) {
+                        if (canSpecialized) {
                             state.db.tutorials.filter { t ->
-                                t.status == "approved" &&
+                                (t.status == "approved" || t.ownerId == state.currentUid) &&
                                     (sw.problemId == null || t.problemId == sw.problemId) &&
-                                    (sw.search.isBlank() || t.title.contains(sw.search, ignoreCase = true) || t.teacher.contains(sw.search, ignoreCase = true))
+                                    (sw.search.isBlank() ||
+                                        t.title.contains(sw.search, ignoreCase = true) ||
+                                        t.teacher.contains(sw.search, ignoreCase = true))
                             }
                         } else {
                             emptyList()
@@ -125,17 +138,24 @@ fun SoftwareTabScreen(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(bottom = 24.dp)
                     ) {
+                        item(key = "sw_tut_subtabs") {
+                            BazmoSubTabBar(
+                                tabs = subTabs,
+                                selectedKey = selectedSubKey,
+                                onSelect = onSelectSubTab
+                            )
+                        }
                         item(key = "sw_tut_back") {
                             BazmoBackBar(
                                 title = when {
-                                    !canViewTutorials && prob != null -> "${prob.iconEmoji} ${prob.title}"
+                                    !canSpecialized && prob != null -> "${prob.iconEmoji} ${prob.title}"
                                     prob != null -> "آموزش‌های: ${prob.title}"
                                     else -> "آموزش‌های نرم‌افزار"
                                 },
                                 onBack = { viewModel.setSwMode(SoftwareSubMode.HOME) }
                             )
                         }
-                        if (!canViewTutorials) {
+                        if (!canSpecialized) {
                             item(key = "sw_tut_locked") {
                                 BazmoCard {
                                     Text(
@@ -170,24 +190,24 @@ fun SoftwareTabScreen(
                             }
                         } else {
                             item(key = "sw_tut_search") {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(bottom = 10.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    BazmoSearchBar(
-                                        value = sw.search,
-                                        onValueChange = { viewModel.updateSwSearch(it) },
-                                        placeholder = "جستجو در آموزش‌ها...",
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    BazmoGoldButton(
-                                        text = "+ فروش آموزش",
-                                        onClick = { viewModel.openModal(BazmoModal.SellTutorial) },
-                                        compact = true
-                                    )
+                                BazmoCard {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        BazmoSearchBar(
+                                            value = sw.search,
+                                            onValueChange = { viewModel.updateSwSearch(it) },
+                                            placeholder = "جستجو در آموزش‌ها...",
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        BazmoGoldButton(
+                                            text = "+ فروش آموزش",
+                                            onClick = { viewModel.openModal(BazmoModal.SellTutorial) },
+                                            compact = true
+                                        )
+                                    }
                                 }
                             }
                             if (list.isEmpty()) {
@@ -199,42 +219,11 @@ fun SoftwareTabScreen(
                                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                                     ) {
                                         rowItems.forEach { t ->
-                                            BazmoCard(modifier = Modifier.weight(1f)) {
-                                                Row(
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    horizontalArrangement = Arrangement.SpaceBetween
-                                                ) {
-                                                    BazmoBadge("👨🏫 ${t.teacher}", BadgeTone.BLUE)
-                                                    BazmoBadge("⭐ ${t.rating} • 📍 ${t.city}", BadgeTone.GREEN)
-                                                }
-                                                Spacer(modifier = Modifier.height(7.dp))
-                                                Text(
-                                                    text = t.title,
-                                                    style = MaterialTheme.typography.titleSmall,
-                                                    fontWeight = FontWeight.ExtraBold,
-                                                    color = TextPrimary
-                                                )
-                                                Spacer(modifier = Modifier.height(6.dp))
-                                                BazmoWarrantyBox("📌 شرایط: ${t.terms}")
-                                                Spacer(modifier = Modifier.height(10.dp))
-                                                Row(
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    Text(
-                                                        text = t.price.formatToman(),
-                                                        style = MaterialTheme.typography.titleSmall,
-                                                        fontWeight = FontWeight.Black,
-                                                        color = Navy
-                                                    )
-                                                    BazmoPrimaryButton(
-                                                        text = "خرید آموزش",
-                                                        onClick = { viewModel.addToCart(t.id, t.title, t.price, t.teacher) },
-                                                        compact = true
-                                                    )
-                                                }
-                                            }
+                                            SoftwareTutorialCard(
+                                                tutorial = t,
+                                                onBuy = { viewModel.addToCart(t.id, t.title, t.price, t.teacher) },
+                                                modifier = Modifier.weight(1f)
+                                            )
                                         }
                                         repeat(cols - rowItems.size) {
                                             Spacer(modifier = Modifier.weight(1f))
@@ -243,7 +232,6 @@ fun SoftwareTabScreen(
                                 }
                             }
                         }
-                        item(key = "sw_tut_dock") { SoftwareBottomDock(state, viewModel) }
                     }
                 }
 
@@ -259,31 +247,46 @@ fun SoftwareTabScreen(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(bottom = 24.dp)
                     ) {
-                        item(key = "sw_req_back") {
-                            BazmoBackBar(
-                                title = "درخواست‌های نرم‌افزاری",
-                                onBack = { viewModel.setSwMode(SoftwareSubMode.HOME) }
+                        item(key = "sw_req_subtabs") {
+                            BazmoSubTabBar(
+                                tabs = subTabs,
+                                selectedKey = selectedSubKey,
+                                onSelect = onSelectSubTab
+                            )
+                        }
+                        item(key = "sw_req_banners") {
+                            BazmoPromoBannerGrid(
+                                slots = swBanners,
+                                onBannerClick = { banner ->
+                                    viewModel.openPromoBanner(banner) { url ->
+                                        runCatching { uriHandler.openUri(url) }
+                                            .onFailure { viewModel.showToast("امکان باز کردن لینک وجود ندارد") }
+                                    }
+                                },
+                                onEmptySlotClick = {
+                                    viewModel.showToast("اینجا جای تبلیغات شماست؛ جهت ثبت بنر با مدیریت بازمو تماس بگیرید.")
+                                }
                             )
                         }
                         item(key = "sw_req_search") {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(bottom = 10.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                BazmoSearchBar(
-                                    value = sw.search,
-                                    onValueChange = { viewModel.updateSwSearch(it) },
-                                    placeholder = "جستجو در درخواست‌ها...",
-                                    modifier = Modifier.weight(1f)
-                                )
-                                BazmoPrimaryButton(
-                                    text = "+ ثبت درخواست",
-                                    onClick = { viewModel.openModal(BazmoModal.NewSwReq) },
-                                    compact = true
-                                )
+                            BazmoCard {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    BazmoSearchBar(
+                                        value = sw.search,
+                                        onValueChange = { viewModel.updateSwSearch(it) },
+                                        placeholder = "جستجو در درخواست‌ها...",
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    BazmoPrimaryButton(
+                                        text = "+ ثبت درخواست",
+                                        onClick = { viewModel.openModal(BazmoModal.NewSwReq) },
+                                        compact = true
+                                    )
+                                }
                             }
                         }
                         if (reqs.isEmpty()) {
@@ -300,7 +303,10 @@ fun SoftwareTabScreen(
                                                 modifier = Modifier.fillMaxWidth(),
                                                 horizontalArrangement = Arrangement.SpaceBetween
                                             ) {
-                                                BazmoBadge(r.status, BadgeTone.GOLD)
+                                                BazmoBadge(
+                                                    text = r.status,
+                                                    tone = if (r.reply.isNotBlank()) BadgeTone.GREEN else BadgeTone.GOLD
+                                                )
                                                 Text(text = "📍 ${r.city}", style = MaterialTheme.typography.bodySmall, color = TextMuted)
                                             }
                                             Spacer(modifier = Modifier.height(7.dp))
@@ -322,14 +328,17 @@ fun SoftwareTabScreen(
                                 }
                             }
                         }
-                        item(key = "sw_req_dock") { SoftwareBottomDock(state, viewModel) }
                     }
                 }
 
                 SoftwareSubMode.BOXES -> {
-                    val boxes = remember(state.db.boxes, sw.search) {
+                    val boxes = remember(state.db.boxes, state.currentUid, sw.search) {
                         state.db.boxes.filter { b ->
-                            b.status == "approved" && (sw.search.isBlank() || b.name.contains(sw.search, ignoreCase = true) || b.city.contains(sw.search, ignoreCase = true))
+                            (b.status == "approved" || b.ownerId == state.currentUid) &&
+                                (sw.search.isBlank() ||
+                                    b.name.contains(sw.search, ignoreCase = true) ||
+                                    b.seller.contains(sw.search, ignoreCase = true) ||
+                                    b.city.contains(sw.search, ignoreCase = true))
                         }
                     }
                     val boxRows = remember(boxes, cols) { boxes.chunked(cols) }
@@ -338,31 +347,46 @@ fun SoftwareTabScreen(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(bottom = 24.dp)
                     ) {
-                        item(key = "sw_box_back") {
-                            BazmoBackBar(
-                                title = "خرید و فروش باکس‌های تعمیراتی",
-                                onBack = { viewModel.setSwMode(SoftwareSubMode.HOME) }
+                        item(key = "sw_box_subtabs") {
+                            BazmoSubTabBar(
+                                tabs = subTabs,
+                                selectedKey = selectedSubKey,
+                                onSelect = onSelectSubTab
+                            )
+                        }
+                        item(key = "sw_box_banners") {
+                            BazmoPromoBannerGrid(
+                                slots = swBanners,
+                                onBannerClick = { banner ->
+                                    viewModel.openPromoBanner(banner) { url ->
+                                        runCatching { uriHandler.openUri(url) }
+                                            .onFailure { viewModel.showToast("امکان باز کردن لینک وجود ندارد") }
+                                    }
+                                },
+                                onEmptySlotClick = {
+                                    viewModel.showToast("اینجا جای تبلیغات شماست؛ جهت ثبت بنر با مدیریت بازمو تماس بگیرید.")
+                                }
                             )
                         }
                         item(key = "sw_box_search") {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(bottom = 10.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                BazmoSearchBar(
-                                    value = sw.search,
-                                    onValueChange = { viewModel.updateSwSearch(it) },
-                                    placeholder = "جستجوی باکس یا دانگل...",
-                                    modifier = Modifier.weight(1f)
-                                )
-                                BazmoGoldButton(
-                                    text = "+ فروش باکس",
-                                    onClick = { viewModel.openModal(BazmoModal.SellBox) },
-                                    compact = true
-                                )
+                            BazmoCard {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    BazmoSearchBar(
+                                        value = sw.search,
+                                        onValueChange = { viewModel.updateSwSearch(it) },
+                                        placeholder = "جستجوی باکس یا دانگل...",
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    BazmoGoldButton(
+                                        text = "+ فروش باکس",
+                                        onClick = { viewModel.openModal(BazmoModal.SellBox) },
+                                        compact = true
+                                    )
+                                }
                             }
                         }
                         if (boxes.isEmpty()) {
@@ -377,10 +401,20 @@ fun SoftwareTabScreen(
                                         BazmoCard(modifier = Modifier.weight(1f)) {
                                             Row(
                                                 modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
                                             ) {
                                                 BazmoBadge("🧰 ${b.condition}", BadgeTone.BLUE)
-                                                Text(text = "📍 ${b.city}", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                                                Row(
+                                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    BazmoBadge(
+                                                        text = if (b.status == "approved") "فعال" else "در انتظار تایید",
+                                                        tone = if (b.status == "approved") BadgeTone.GREEN else BadgeTone.GOLD
+                                                    )
+                                                    Text(text = "📍 ${b.city}", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                                                }
                                             }
                                             Spacer(modifier = Modifier.height(6.dp))
                                             Text(
@@ -420,7 +454,6 @@ fun SoftwareTabScreen(
                                 }
                             }
                         }
-                        item(key = "sw_box_dock") { SoftwareBottomDock(state, viewModel) }
                     }
                 }
 
@@ -430,20 +463,31 @@ fun SoftwareTabScreen(
                             sw.search.isBlank() || p.title.contains(sw.search, ignoreCase = true)
                         }
                     }
+                    val allTutorials = remember(state.db.tutorials, canSpecialized, state.currentUid, sw.search) {
+                        if (!canSpecialized) emptyList()
+                        else state.db.tutorials.filter { t ->
+                            (t.status == "approved" || t.ownerId == state.currentUid) &&
+                                (sw.search.isBlank() ||
+                                    t.title.contains(sw.search, ignoreCase = true) ||
+                                    t.teacher.contains(sw.search, ignoreCase = true))
+                        }
+                    }
                     val rows = remember(filteredProblems, tileCols) {
                         filteredProblems.chunked(tileCols)
+                    }
+                    val allTutRows = remember(allTutorials, cols) {
+                        allTutorials.chunked(cols)
                     }
 
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(bottom = 24.dp)
                     ) {
-                        item(key = "sw_home_search") {
-                            BazmoSearchBar(
-                                value = sw.search,
-                                onValueChange = { viewModel.updateSwSearch(it) },
-                                placeholder = "جستجوی مشکل نرم‌افزاری، آموزش یا باکس...",
-                                modifier = Modifier.padding(bottom = 8.dp)
+                        item(key = "sw_home_subtabs") {
+                            BazmoSubTabBar(
+                                tabs = subTabs,
+                                selectedKey = selectedSubKey,
+                                onSelect = onSelectSubTab
                             )
                         }
                         item(key = "sw_promo_banners") {
@@ -460,14 +504,56 @@ fun SoftwareTabScreen(
                                 }
                             )
                         }
-                        if (!state.canAccessSoftwareSpecialized) {
+                        if (!canSpecialized) {
                             item(key = "sw_home_notice") {
-                                BazmoWarrantyBox(
-                                    text = "🔒 آموزش‌ها و انجمن تخصصی نرم‌افزار فقط برای نقش نرم‌افزارکار فعال است. بخش درخواست‌ها و باکس‌ها برای همه همکاران آزاد است.",
-                                    modifier = Modifier.padding(bottom = 8.dp)
-                                )
+                                BazmoCard {
+                                    BazmoWarrantyBox(
+                                        text = "🔒 آموزش‌ها و انجمن تخصصی نرم‌افزار فقط برای نقش «نرم‌افزارکار» فعال است.\nبخش درخواست‌ها و باکس و دانگل برای همه همکاران آزاد است.",
+                                        modifier = Modifier.padding(bottom = 10.dp)
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        BazmoPrimaryButton(
+                                            text = "📋 درخواست‌ها",
+                                            onClick = { viewModel.setSwMode(SoftwareSubMode.REQUESTS) },
+                                            compact = true,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        BazmoGoldButton(
+                                            text = "🧰 باکس و دانگل",
+                                            onClick = { viewModel.setSwMode(SoftwareSubMode.BOXES) },
+                                            compact = true,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+                                }
+                            }
+                        } else {
+                            item(key = "sw_home_toolbar") {
+                                BazmoCard {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        BazmoSearchBar(
+                                            value = sw.search,
+                                            onValueChange = { viewModel.updateSwSearch(it) },
+                                            placeholder = "جستجوی مشکل نرم‌افزاری یا آموزش...",
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        BazmoGoldButton(
+                                            text = "+ فروش آموزش",
+                                            onClick = { viewModel.openModal(BazmoModal.SellTutorial) },
+                                            compact = true
+                                        )
+                                    }
+                                }
                             }
                         }
+
                         item(key = "sw_home_hdr") {
                             BazmoSectionHeader("کاشی مشکلات نرم‌افزاری")
                         }
@@ -481,7 +567,7 @@ fun SoftwareTabScreen(
                                 rowItems.forEach { prob ->
                                     BazmoSquareTile(
                                         iconEmoji = prob.iconEmoji,
-                                        title = prob.title,
+                                        title = if (canSpecialized) prob.title else "🔒 ${prob.title}",
                                         onClick = { viewModel.setSwMode(SoftwareSubMode.PROBLEM, prob.id) },
                                         modifier = Modifier.weight(1f)
                                     )
@@ -491,9 +577,28 @@ fun SoftwareTabScreen(
                                 }
                             }
                         }
-                        item(key = "sw_home_dock") {
-                            BazmoSectionHeader("بخش‌های تخصصی نرم‌افزار")
-                            SoftwareBottomDock(state, viewModel)
+
+                        if (canSpecialized && allTutorials.isNotEmpty()) {
+                            item(key = "sw_all_tut_hdr") {
+                                BazmoSectionHeader("همه آموزش‌های تخصصی")
+                            }
+                            itemsIndexed(allTutRows, key = { idx, row -> "sw_all_tut_${idx}_" + row.joinToString("_") { it.id } }) { _, rowItems ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    rowItems.forEach { t ->
+                                        SoftwareTutorialCard(
+                                            tutorial = t,
+                                            onBuy = { viewModel.addToCart(t.id, t.title, t.price, t.teacher) },
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+                                    repeat(cols - rowItems.size) {
+                                        Spacer(modifier = Modifier.weight(1f))
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -503,60 +608,50 @@ fun SoftwareTabScreen(
 }
 
 @Composable
-private fun SoftwareBottomDock(state: BazmoUiState, viewModel: BazmoViewModel) {
-    val canSpecialized = state.canAccessSoftwareSpecialized
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(9.dp)
-    ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(9.dp), modifier = Modifier.fillMaxWidth()) {
-            DockTileButton(
-                label = if (canSpecialized) "🎓 آموزش‌ها" else "🔒 آموزش‌ها (نرم‌افزارکار)",
-                locked = !canSpecialized,
-                modifier = Modifier.weight(1f)
-            ) { viewModel.setSwMode(SoftwareSubMode.TUTORIALS) }
-            DockTileButton(
-                label = if (canSpecialized) "💬 انجمن تخصصی" else "🔒 انجمن تخصصی (نرم‌افزارکار)",
-                locked = !canSpecialized,
-                modifier = Modifier.weight(1f)
-            ) { viewModel.setSwMode(SoftwareSubMode.FORUM) }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(9.dp), modifier = Modifier.fillMaxWidth()) {
-            DockTileButton("📋 درخواست‌ها", modifier = Modifier.weight(1f)) { viewModel.setSwMode(SoftwareSubMode.REQUESTS) }
-            DockTileButton("🧰 باکس‌ها", modifier = Modifier.weight(1f)) { viewModel.setSwMode(SoftwareSubMode.BOXES) }
-        }
-    }
-}
-
-@Composable
-private fun DockTileButton(
-    label: String,
-    modifier: Modifier = Modifier,
-    locked: Boolean = false,
-    onClick: () -> Unit
+private fun SoftwareTutorialCard(
+    tutorial: TutorialEntity,
+    onBuy: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    val gradient = if (locked) {
-        Brush.linearGradient(listOf(Color(0xFF475569), Color(0xFF64748B)))
-    } else {
-        Brush.linearGradient(listOf(HeaderBgDeep, HeaderBgLight))
-    }
-    Box(
-        modifier = modifier
-            .heightIn(min = 50.dp)
-            .clip(RoundedCornerShape(15.dp))
-            .background(gradient)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 13.dp),
-        contentAlignment = Alignment.Center
-    ) {
+    BazmoCard(modifier = modifier) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            BazmoBadge("👨🏫 ${tutorial.teacher}", BadgeTone.BLUE)
+            if (tutorial.status == "approved") {
+                BazmoBadge("⭐ ${tutorial.rating} • 📍 ${tutorial.city}", BadgeTone.GREEN)
+            } else {
+                BazmoBadge("در انتظار تایید", BadgeTone.GOLD)
+            }
+        }
+        Spacer(modifier = Modifier.height(7.dp))
         Text(
-            text = label,
-            style = MaterialTheme.typography.labelLarge,
+            text = tutorial.title,
+            style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.ExtraBold,
-            color = Color.White,
-            textAlign = TextAlign.Center
+            color = TextPrimary
         )
+        Spacer(modifier = Modifier.height(6.dp))
+        BazmoWarrantyBox("📌 شرایط: ${tutorial.terms}")
+        Spacer(modifier = Modifier.height(10.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = tutorial.price.formatToman(),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Black,
+                color = Navy
+            )
+            BazmoPrimaryButton(
+                text = "خرید آموزش",
+                onClick = onBuy,
+                compact = true
+            )
+        }
     }
 }

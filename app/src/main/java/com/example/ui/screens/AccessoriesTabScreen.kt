@@ -109,9 +109,10 @@ fun AccessoriesTabScreen(
         }
     }
 
-    val accUserAds = remember(state.db.hwAds, av.search) {
+    val accUserAds = remember(state.db.hwAds, state.currentUid, av.search) {
         state.db.hwAds.filter { ad ->
-            ad.status == "approved" && ad.section == "acc" &&
+            (ad.status == "approved" || ad.ownerId == state.currentUid) &&
+                ad.section == "acc" &&
                 (av.search.isBlank() ||
                     ad.title.contains(av.search, ignoreCase = true) ||
                     ad.cat.contains(av.search, ignoreCase = true))
@@ -128,35 +129,35 @@ fun AccessoriesTabScreen(
             contentPadding = PaddingValues(bottom = 24.dp)
         ) {
             item(key = "acc_search_actions") {
-                BazmoSearchBar(
-                    value = av.search,
-                    onValueChange = { viewModel.updateAccSearch(it) },
-                    placeholder = "جستجوی لوازم جانبی...",
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 8.dp)
-                ) {
-                    BazmoPrimaryButton(
-                        text = "➕ ثبت آگهی جانبی",
-                        onClick = { viewModel.openModal(BazmoModal.NewMarketAd("acc")) },
-                        compact = true,
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("acc_new_ad_button")
+                BazmoCard {
+                    BazmoSearchBar(
+                        value = av.search,
+                        onValueChange = { viewModel.updateAccSearch(it) },
+                        placeholder = "جستجوی لوازم جانبی...",
+                        modifier = Modifier.padding(bottom = 8.dp)
                     )
-                    if (state.canCreateStoreInSection("acc")) {
-                        BazmoGoldButton(
-                            text = "🏪 ثبت فروشگاه",
-                            onClick = { viewModel.openModal(BazmoModal.RegisterStore("acc")) },
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        BazmoPrimaryButton(
+                            text = "➕ ثبت آگهی جانبی",
+                            onClick = { viewModel.openModal(BazmoModal.NewMarketAd("acc")) },
                             compact = true,
                             modifier = Modifier
                                 .weight(1f)
-                                .testTag("acc_register_store_button")
+                                .testTag("acc_new_ad_button")
                         )
+                        if (state.canCreateStoreInSection("acc")) {
+                            BazmoGoldButton(
+                                text = "🏪 ثبت فروشگاه",
+                                onClick = { viewModel.openModal(BazmoModal.RegisterStore("acc")) },
+                                compact = true,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("acc_register_store_button")
+                            )
+                        }
                     }
                 }
             }
@@ -344,7 +345,16 @@ fun AccessoriesTabScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     BazmoBadge(ad.cat, BadgeTone.BLUE)
-                                    Text("🏪 ${ad.seller} | 📍 ${ad.city}", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        BazmoBadge(
+                                            text = if (ad.status == "approved") "تاییدشده" else "در انتظار تایید",
+                                            tone = if (ad.status == "approved") BadgeTone.GREEN else BadgeTone.GOLD
+                                        )
+                                        Text("🏪 ${ad.seller} | 📍 ${ad.city}", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                                    }
                                 }
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Text(

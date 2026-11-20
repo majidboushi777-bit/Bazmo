@@ -59,7 +59,7 @@ enum class AppRole { USER, ADMIN }
 enum class AdminTab { DASHBOARD, USERS, NOTIFICATIONS, ADS, REQUESTS, CATALOG }
 enum class MobileSubMode { LIST, MODEL, STORE }
 enum class SoftwareSubMode { HOME, PROBLEM, TUTORIALS, REQUESTS, BOXES, FORUM }
-enum class HardwareSubMode { HOME, AD_DETAIL, MY_ADS, SPECIAL_REQ, FORUM }
+enum class HardwareSubMode { HOME, AD_DETAIL, STORE_DETAIL, MY_ADS, SPECIAL_REQ, FORUM }
 enum class ForumSort { HOT, NEW, TOP }
 
 data class CartItem(
@@ -128,7 +128,8 @@ data class HwUiFilter(
     val mode: HardwareSubMode = HardwareSubMode.HOME,
     val cat: String = "همه",
     val search: String = "",
-    val adId: String? = null
+    val adId: String? = null,
+    val storeId: String? = null
 )
 
 data class ForumUiFilter(
@@ -651,7 +652,8 @@ class BazmoViewModel(
 
     fun saveOwnProfile(
         fullName: String,
-        phone: String
+        phone: String,
+        newPassword: String = ""
     ) {
         val fn = fullName.trim().take(120)
         if (fn.isEmpty()) {
@@ -659,19 +661,33 @@ class BazmoViewModel(
             return
         }
         val cleanPhone = phone.trim().take(40)
+        val cleanPass = newPassword.trim()
+        if (cleanPass.isNotEmpty() && cleanPass.length < 6) {
+            showToast("رمز عبور باید حداقل ۶ کاراکتر باشد")
+            return
+        }
         viewModelScope.launch {
             repository.updateOwnProfile(
                 uid = uid,
                 fullName = fn,
                 phone = cleanPhone
             ).onSuccess {
+                if (cleanPass.isNotEmpty()) {
+                    repository.changeOwnPassword(cleanPass).onFailure { passErr ->
+                        showToast(passErr.message ?: "خطا در تغییر رمز عبور")
+                        return@launch
+                    }
+                }
                 sessionState.update {
                     it.copy(
                         currentUser = it.currentUser?.copy(fullName = fn, phone = cleanPhone),
                         modal = null
                     )
                 }
-                showToast("نام و شماره تماس پروفایل ذخیره شد")
+                showToast(
+                    if (cleanPass.isNotEmpty()) "پروفایل و رمز عبور جدید با موفقیت ذخیره شد"
+                    else "نام و شماره تماس پروفایل ذخیره شد"
+                )
             }.onFailure { err ->
                 showToast(err.message ?: "خطا در ذخیره پروفایل")
             }
@@ -1069,12 +1085,16 @@ class BazmoViewModel(
     }
 
     // ==================== HARDWARE & MARKETPLACE ADS / STORES ====================
-    fun setHwMode(mode: HardwareSubMode, adId: String? = null) {
+    fun setHwMode(mode: HardwareSubMode, adId: String? = null, storeId: String? = null) {
         if (mode == HardwareSubMode.FORUM && !uiState.value.canAccessHardwareForum) {
             showToast("ورود به انجمن سخت‌افزار فقط برای نقش تعمیرکار مجاز است")
             return
         }
-        sessionState.update { it.copy(hwView = it.hwView.copy(mode = mode, adId = adId)) }
+        sessionState.update { it.copy(hwView = it.hwView.copy(mode = mode, adId = adId, storeId = storeId)) }
+    }
+
+    fun openHardwareStore(storeId: String) {
+        setHwMode(HardwareSubMode.STORE_DETAIL, storeId = storeId)
     }
 
     fun updateHwSearch(q: String) =

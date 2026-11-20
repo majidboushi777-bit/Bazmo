@@ -8,6 +8,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -18,9 +20,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -35,17 +40,22 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.HwAdEntity
 import com.example.data.LocationPoint
 import com.example.data.filterByLocation
 import com.example.data.formatToman
+import com.example.data.toPersianNumber
 import com.example.ui.components.BadgeTone
 import com.example.ui.components.BazmoAccentButton
 import com.example.ui.components.BazmoBackBar
@@ -62,9 +72,14 @@ import com.example.ui.components.BazmoSearchBar
 import com.example.ui.components.BazmoSectionHeader
 import com.example.ui.components.BazmoSoftButton
 import com.example.ui.components.BazmoSquareTile
+import com.example.ui.components.BazmoSubTabBar
+import com.example.ui.components.BazmoSubTabItem
 import com.example.ui.components.BazmoSuccessButton
 import com.example.ui.components.BazmoWarrantyBox
 import com.example.ui.theme.BorderLight
+import com.example.ui.theme.GoldAccent
+import com.example.ui.theme.HeaderBgDeep
+import com.example.ui.theme.HeaderBgLight
 import com.example.ui.theme.Navy
 import com.example.ui.theme.NavyDeep
 import com.example.ui.theme.TextMuted
@@ -84,6 +99,35 @@ fun HardwareTabScreen(
     val uriHandler = LocalUriHandler.current
     val hwBanners = remember(state.db.banners, state.session.province, state.session.city, state.session.region) {
         state.bannersForSection("hw")
+    }
+    val myAdsCount = remember(state.db.hwAds, state.currentUid) {
+        state.db.hwAds.count { it.ownerId == state.currentUid }
+    }
+    val subTabs = remember(myAdsCount, state.canAccessHardwareForum) {
+        listOf(
+            BazmoSubTabItem("home", "بازار قطعات"),
+            BazmoSubTabItem("my_ads", "آگهی‌های من (${myAdsCount.toPersianNumber()})"),
+            BazmoSubTabItem("special_req", "درخواست قطعه"),
+            BazmoSubTabItem(
+                key = "forum",
+                label = if (state.canAccessHardwareForum) "💬 انجمن سخت‌افزار" else "🔒 انجمن",
+                testTag = "hw_forum_button"
+            )
+        )
+    }
+    val selectedSubKey = when (hv.mode) {
+        HardwareSubMode.MY_ADS -> "my_ads"
+        HardwareSubMode.SPECIAL_REQ -> "special_req"
+        HardwareSubMode.FORUM -> "forum"
+        HardwareSubMode.HOME, HardwareSubMode.AD_DETAIL, HardwareSubMode.STORE_DETAIL -> "home"
+    }
+    val onSelectSubTab: (String) -> Unit = { key ->
+        when (key) {
+            "home" -> viewModel.setHwMode(HardwareSubMode.HOME)
+            "my_ads" -> viewModel.setHwMode(HardwareSubMode.MY_ADS)
+            "special_req" -> viewModel.setHwMode(HardwareSubMode.SPECIAL_REQ)
+            "forum" -> viewModel.setHwMode(HardwareSubMode.FORUM)
+        }
     }
 
     BackHandler(enabled = hv.mode != HardwareSubMode.HOME && hv.mode != HardwareSubMode.FORUM) {
@@ -115,6 +159,149 @@ fun HardwareTabScreen(
                     )
                 }
 
+                HardwareSubMode.STORE_DETAIL -> {
+                    val store = remember(state.db.stores, hv.storeId) {
+                        hv.storeId?.let { id -> state.db.stores.find { it.id == id } }
+                    }
+                    if (store == null) {
+                        LaunchedEffect(hv.storeId) {
+                            viewModel.setHwMode(HardwareSubMode.HOME)
+                        }
+                        return@AnimatedContent
+                    }
+                    val storeHwAds = remember(state.db.hwAds, store.id, store.ownerId, store.name, state.currentUid) {
+                        state.db.hwAds.filter { ad ->
+                            (ad.status == "approved" || ad.ownerId == state.currentUid) &&
+                                ((store.ownerId.isNotBlank() && ad.ownerId == store.ownerId) ||
+                                    ad.seller.equals(store.name, ignoreCase = true))
+                        }
+                    }
+                    val storeAdRows = remember(storeHwAds, cols) { storeHwAds.chunked(cols) }
+
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(bottom = 24.dp)
+                    ) {
+                        item(key = "hw_store_back") {
+                            BazmoBackBar(
+                                title = "فروشگاه ${store.name}",
+                                onBack = { viewModel.setHwMode(HardwareSubMode.HOME) },
+                                trailing = { BazmoBadge("⭐ ${store.rating}", BadgeTone.GOLD) }
+                            )
+                        }
+                        item(key = "hw_store_card") {
+                            BazmoCard {
+                                Text(
+                                    text = "🏪 ${store.name}",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Black,
+                                    color = NavyDeep
+                                )
+                                Text(
+                                    text = "📍 ${store.province} • ${store.city} (${store.region.ifBlank { "همه مناطق" }})",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = TextMuted,
+                                    modifier = Modifier.padding(top = 4.dp)
+                                )
+                                Text(
+                                    text = "آدرس: ${store.address.ifBlank { "ثبت نشده" }}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = TextMuted,
+                                    modifier = Modifier.padding(top = 3.dp)
+                                )
+                                Text(
+                                    text = "🕒 ساعات کاری: ${store.hours}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = TextMuted,
+                                    modifier = Modifier.padding(top = 3.dp)
+                                )
+                                if (store.phone.isNotBlank()) {
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    BazmoPrimaryButton(
+                                        text = "📞 تماس مستقیم: ${store.phone}",
+                                        onClick = {
+                                            val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:${store.phone}"))
+                                            runCatching { context.startActivity(intent) }
+                                                .onFailure { viewModel.showToast("برنامه تماس روی این دستگاه یافت نشد") }
+                                        },
+                                        compact = true,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                            }
+                        }
+                        item(key = "hw_store_ads_hdr") {
+                            BazmoSectionHeader(
+                                title = "آگهی‌ها و قطعات این فروشگاه",
+                                badgeText = "${storeHwAds.size.toPersianNumber()} مورد"
+                            )
+                        }
+                        if (storeHwAds.isEmpty()) {
+                            item(key = "hw_store_ads_empty") {
+                                BazmoEmptyState("آگهی فعالی برای این فروشگاه ثبت نشده است.")
+                            }
+                        } else {
+                            itemsIndexed(storeAdRows, key = { idx, row -> "hw_st_ad_${idx}_" + row.joinToString("_") { it.id } }) { _, rowItems ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    rowItems.forEach { ad ->
+                                        BazmoCard(
+                                            onClick = { viewModel.setHwMode(HardwareSubMode.AD_DETAIL, ad.id) },
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween
+                                            ) {
+                                                BazmoBadge(ad.cat, BadgeTone.BLUE)
+                                                BazmoBadge(
+                                                    text = if (ad.status == "approved") "فعال" else "در انتظار تایید",
+                                                    tone = if (ad.status == "approved") BadgeTone.GREEN else BadgeTone.GOLD
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.height(6.dp))
+                                            Text(
+                                                text = ad.title,
+                                                style = MaterialTheme.typography.titleSmall,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                color = TextPrimary
+                                            )
+                                            Text(
+                                                text = "${ad.brand} ${ad.model} • ${ad.series}",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = TextMuted,
+                                                modifier = Modifier.padding(top = 3.dp, bottom = 8.dp)
+                                            )
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = ad.price.formatToman(),
+                                                    style = MaterialTheme.typography.titleSmall,
+                                                    fontWeight = FontWeight.Black,
+                                                    color = Navy
+                                                )
+                                                BazmoPrimaryButton(
+                                                    text = "🛒 خرید",
+                                                    onClick = { viewModel.addToCart(ad.id, ad.title, ad.price, ad.seller) },
+                                                    compact = true
+                                                )
+                                            }
+                                        }
+                                    }
+                                    repeat(cols - rowItems.size) {
+                                        Spacer(modifier = Modifier.weight(1f))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 HardwareSubMode.AD_DETAIL -> {
                     val ad = remember(state.db.hwAds, hv.adId) {
                         state.db.hwAds.find { it.id == hv.adId }
@@ -142,7 +329,10 @@ fun HardwareTabScreen(
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     BazmoBadge(ad.cat, BadgeTone.BLUE)
-                                    BazmoBadge("📍 ${ad.city}", BadgeTone.GREEN)
+                                    BazmoBadge(
+                                        text = if (ad.status == "approved") "✓ تاییدشده • 📍 ${ad.city}" else "در انتظار تایید",
+                                        tone = if (ad.status == "approved") BadgeTone.GREEN else BadgeTone.GOLD
+                                    )
                                 }
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
@@ -241,18 +431,47 @@ fun HardwareTabScreen(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(bottom = 24.dp)
                     ) {
-                        item(key = "hw_myads_back") {
-                            BazmoBackBar(
-                                title = "مدیریت آگهی‌های من",
-                                onBack = { viewModel.setHwMode(HardwareSubMode.HOME) },
-                                trailing = {
-                                    BazmoPrimaryButton(
-                                        text = "+ آگهی جدید",
-                                        onClick = { viewModel.openModal(BazmoModal.NewHwAd) },
-                                        compact = true
-                                    )
+                        item(key = "hw_myads_subtabs") {
+                            BazmoSubTabBar(
+                                tabs = subTabs,
+                                selectedKey = selectedSubKey,
+                                onSelect = onSelectSubTab
+                            )
+                        }
+                        item(key = "hw_myads_banners") {
+                            BazmoPromoBannerGrid(
+                                slots = hwBanners,
+                                onBannerClick = { banner ->
+                                    viewModel.openPromoBanner(banner) { url ->
+                                        runCatching { uriHandler.openUri(url) }
+                                            .onFailure { viewModel.showToast("امکان باز کردن لینک وجود ندارد") }
+                                    }
+                                },
+                                onEmptySlotClick = {
+                                    viewModel.showToast("اینجا جای تبلیغات شماست؛ جهت ثبت بنر با مدیریت بازمو تماس بگیرید.")
                                 }
                             )
+                        }
+                        item(key = "hw_myads_hdr") {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 10.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "آگهی‌های ثبت‌شده توسط شما",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = NavyDeep
+                                )
+                                BazmoPrimaryButton(
+                                    text = "+ آگهی جدید",
+                                    onClick = { viewModel.openModal(BazmoModal.NewHwAd) },
+                                    compact = true
+                                )
+                            }
                         }
                         if (mine.isEmpty()) {
                             item(key = "hw_myads_empty") { BazmoEmptyState("شما هنوز آگهی ثبت نکرده‌اید.") }
@@ -340,16 +559,31 @@ fun HardwareTabScreen(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(bottom = 24.dp)
                     ) {
-                        item(key = "hw_req_back") {
-                            BazmoBackBar(
-                                title = "درخواست تخصصی قطعه",
-                                onBack = { viewModel.setHwMode(HardwareSubMode.HOME) }
+                        item(key = "hw_req_subtabs") {
+                            BazmoSubTabBar(
+                                tabs = subTabs,
+                                selectedKey = selectedSubKey,
+                                onSelect = onSelectSubTab
+                            )
+                        }
+                        item(key = "hw_req_banners") {
+                            BazmoPromoBannerGrid(
+                                slots = hwBanners,
+                                onBannerClick = { banner ->
+                                    viewModel.openPromoBanner(banner) { url ->
+                                        runCatching { uriHandler.openUri(url) }
+                                            .onFailure { viewModel.showToast("امکان باز کردن لینک وجود ندارد") }
+                                    }
+                                },
+                                onEmptySlotClick = {
+                                    viewModel.showToast("اینجا جای تبلیغات شماست؛ جهت ثبت بنر با مدیریت بازمو تماس بگیرید.")
+                                }
                             )
                         }
                         item(key = "hw_req_form") {
                             BazmoCard {
                                 Text(
-                                    text = "🔍 مشخصات دقیق قطعه مورد نیاز",
+                                    text = "🔍 درخواست قطعه کمیاب + جستجوی هوشمند",
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.ExtraBold,
                                     modifier = Modifier.padding(bottom = 10.dp)
@@ -410,7 +644,10 @@ fun HardwareTabScreen(
                                                     style = MaterialTheme.typography.titleSmall,
                                                     fontWeight = FontWeight.ExtraBold
                                                 )
-                                                BazmoBadge(req.status, BadgeTone.GOLD)
+                                                BazmoBadge(
+                                                    text = req.status,
+                                                    tone = if (req.note.isNotBlank()) BadgeTone.GREEN else BadgeTone.GOLD
+                                                )
                                             }
                                             Text(
                                                 text = "قطعه: ${req.partType} | سری/کد: ${req.series}",
@@ -434,19 +671,28 @@ fun HardwareTabScreen(
                 }
 
                 HardwareSubMode.HOME -> {
-                    val approvedAds = remember(state.db.hwAds) {
-                        state.db.hwAds.filter { it.status == "approved" && (it.section == "hw" || it.section.isBlank()) }
-                    }
-                    val hwStores = remember(state.db.stores, state.currentUid) {
-                        state.db.stores.filter {
+                    val visibleAds = remember(state.db.hwAds, state.currentUid) {
+                        state.db.hwAds.filter {
                             (it.status == "approved" || it.ownerId == state.currentUid) &&
-                                (it.type == "hw" || it.type == "both")
+                                (it.section == "hw" || it.section.isBlank())
                         }
                     }
-                    val hwStoreRows = remember(hwStores, cols) { hwStores.chunked(cols) }
-                    val locAds = remember(approvedAds, state.session.province, state.session.city, state.session.region) {
+                    val approvedHwStores = remember(state.db.stores) {
+                        state.db.stores.filter {
+                            it.status == "approved" && (it.type == "hw" || it.type == "both")
+                        }
+                    }
+                    val locStores = remember(approvedHwStores, state.session.province, state.session.city, state.session.region) {
                         filterByLocation(
-                            approvedAds,
+                            approvedHwStores,
+                            state.session.province,
+                            state.session.city,
+                            state.session.region
+                        ) { LocationPoint(it.province, it.city, it.region) }
+                    }
+                    val locAds = remember(visibleAds, state.session.province, state.session.city, state.session.region) {
+                        filterByLocation(
+                            visibleAds,
                             state.session.province,
                             state.session.city,
                             state.session.region
@@ -468,61 +714,12 @@ fun HardwareTabScreen(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(bottom = 24.dp)
                     ) {
-                        item(key = "hw_home_search") {
-                            BazmoSearchBar(
-                                value = hv.search,
-                                onValueChange = { viewModel.updateHwSearch(it) },
-                                placeholder = "سرچ تخصصی قطعه، کد آی‌سی یا مدل...",
-                                modifier = Modifier.padding(bottom = 10.dp)
+                        item(key = "hw_home_subtabs") {
+                            BazmoSubTabBar(
+                                tabs = subTabs,
+                                selectedKey = selectedSubKey,
+                                onSelect = onSelectSubTab
                             )
-                        }
-                        item(key = "hw_home_actions") {
-                            Column(
-                                verticalArrangement = Arrangement.spacedBy(7.dp),
-                                modifier = Modifier.padding(bottom = 10.dp)
-                            ) {
-                                Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.fillMaxWidth()) {
-                                    BazmoPrimaryButton(
-                                        text = "➕ ثبت آگهی قطعه",
-                                        onClick = { viewModel.openModal(BazmoModal.NewHwAd) },
-                                        compact = true,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    BazmoSoftButton(
-                                        text = "🗂️ مدیریت آگهی‌های من",
-                                        onClick = { viewModel.setHwMode(HardwareSubMode.MY_ADS) },
-                                        compact = true,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                }
-                                Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.fillMaxWidth()) {
-                                    BazmoGoldButton(
-                                        text = "🧩 درخواست تخصصی قطعه",
-                                        onClick = { viewModel.setHwMode(HardwareSubMode.SPECIAL_REQ) },
-                                        compact = true,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    BazmoAccentButton(
-                                        text = if (state.canAccessHardwareForum) "💬 انجمن سخت‌افزار"
-                                        else "🔒 انجمن سخت‌افزار (تعمیرکار)",
-                                        onClick = { viewModel.setHwMode(HardwareSubMode.FORUM) },
-                                        compact = true,
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .testTag("hw_forum_button")
-                                    )
-                                }
-                                if (state.canCreateStoreInSection("hw")) {
-                                    BazmoGoldButton(
-                                        text = "🏪 ثبت فروشگاه قطعات",
-                                        onClick = { viewModel.openModal(BazmoModal.RegisterStore("hw")) },
-                                        compact = true,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .testTag("hw_register_store_button")
-                                    )
-                                }
-                            }
                         }
                         item(key = "hw_promo_banners") {
                             BazmoPromoBannerGrid(
@@ -538,41 +735,82 @@ fun HardwareTabScreen(
                                 }
                             )
                         }
-                        if (hwStores.isNotEmpty()) {
-                            item(key = "hw_stores_hdr") {
-                                BazmoSectionHeader("فروشگاه‌های تأمین قطعات")
-                            }
-                            itemsIndexed(hwStoreRows, key = { idx, row -> "hw_st_row_${idx}_" + row.joinToString("_") { it.id } }) { _, rowItems ->
+                        item(key = "hw_home_toolbar") {
+                            BazmoCard {
+                                BazmoSearchBar(
+                                    value = hv.search,
+                                    onValueChange = { viewModel.updateHwSearch(it) },
+                                    placeholder = "سرچ تخصصی قطعه، کد آی‌سی یا مدل...",
+                                    modifier = Modifier.padding(bottom = 8.dp)
+                                )
                                 Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    rowItems.forEach { st ->
-                                        BazmoCard(modifier = Modifier.weight(1f)) {
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Text(
-                                                    text = "🏪 ${st.name}",
-                                                    style = MaterialTheme.typography.titleSmall,
-                                                    fontWeight = FontWeight.ExtraBold,
-                                                    color = TextPrimary,
-                                                    modifier = Modifier.weight(1f)
-                                                )
-                                                BazmoBadge("⭐ ${st.rating}", BadgeTone.GOLD)
-                                            }
+                                    BazmoPrimaryButton(
+                                        text = "➕ ثبت آگهی قطعه",
+                                        onClick = { viewModel.openModal(BazmoModal.NewHwAd) },
+                                        compact = true,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    if (state.canCreateStoreInSection("hw")) {
+                                        BazmoGoldButton(
+                                            text = "🏪 ثبت فروشگاه قطعات",
+                                            onClick = { viewModel.openModal(BazmoModal.RegisterStore("hw")) },
+                                            compact = true,
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .testTag("hw_register_store_button")
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        if (locStores.list.isNotEmpty()) {
+                            item(key = "hw_stores_hdr") {
+                                BazmoSectionHeader(
+                                    title = "🏪 فروشگاه‌های تأمین قطعات (${locStores.scope})",
+                                    badgeText = "${locStores.list.size.toPersianNumber()} فروشگاه"
+                                )
+                            }
+                            item(key = "hw_stores_strip") {
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    contentPadding = PaddingValues(bottom = 10.dp)
+                                ) {
+                                    items(locStores.list, key = { it.id }) { st ->
+                                        Column(
+                                            modifier = Modifier
+                                                .width(176.dp)
+                                                .clip(RoundedCornerShape(16.dp))
+                                                .background(Brush.linearGradient(listOf(HeaderBgDeep, HeaderBgLight)))
+                                                .clickable { viewModel.openHardwareStore(st.id) }
+                                                .padding(12.dp)
+                                        ) {
                                             Text(
-                                                text = "📍 ${st.city} (${st.region}) • 📞 ${st.phone}",
+                                                text = "🏪 ${st.name}",
+                                                style = MaterialTheme.typography.labelLarge,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                color = Color.White,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = "📍 ${st.city} (${st.region}) • ⭐ ${st.rating}",
                                                 style = MaterialTheme.typography.bodySmall,
-                                                color = TextMuted,
+                                                color = Color(0xFFDBEAFE),
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
                                                 modifier = Modifier.padding(top = 4.dp)
                                             )
+                                            Text(
+                                                text = "مشاهده فروشگاه و تماس",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = GoldAccent,
+                                                maxLines = 1,
+                                                modifier = Modifier.padding(top = 3.dp)
+                                            )
                                         }
-                                    }
-                                    repeat(cols - rowItems.size) {
-                                        Spacer(modifier = Modifier.weight(1f))
                                     }
                                 }
                             }
@@ -608,7 +846,10 @@ fun HardwareTabScreen(
                             }
                         }
                         item(key = "hw_ads_hdr") {
-                            BazmoSectionHeader("آگهی‌های قطعات (${locAds.scope})")
+                            BazmoSectionHeader(
+                                title = "آگهی‌های قطعات (${locAds.scope})",
+                                badgeText = "${filteredAds.size.toPersianNumber()} آگهی"
+                            )
                         }
                         if (filteredAds.isEmpty()) {
                             item(key = "hw_ads_empty") { BazmoEmptyState("آگهی با این فیلتر یافت نشد.") }
@@ -625,10 +866,20 @@ fun HardwareTabScreen(
                                         ) {
                                             Row(
                                                 modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
                                             ) {
                                                 BazmoBadge(ad.cat, BadgeTone.BLUE)
-                                                Text(text = "📍 ${ad.city}", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                                                Row(
+                                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    BazmoBadge(
+                                                        text = if (ad.status == "approved") "فعال" else "در انتظار تایید",
+                                                        tone = if (ad.status == "approved") BadgeTone.GREEN else BadgeTone.GOLD
+                                                    )
+                                                    Text(text = "📍 ${ad.city}", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                                                }
                                             }
                                             Spacer(modifier = Modifier.height(6.dp))
                                             Text(
@@ -654,11 +905,18 @@ fun HardwareTabScreen(
                                                     fontWeight = FontWeight.Black,
                                                     color = Navy
                                                 )
-                                                BazmoSoftButton(
-                                                    text = "مشاهده / چت / خرید",
-                                                    onClick = { viewModel.setHwMode(HardwareSubMode.AD_DETAIL, ad.id) },
-                                                    compact = true
-                                                )
+                                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                    BazmoSoftButton(
+                                                        text = "💬 چت",
+                                                        onClick = { viewModel.openModal(BazmoModal.Chat(ad.id)) },
+                                                        compact = true
+                                                    )
+                                                    BazmoPrimaryButton(
+                                                        text = "🛒 خرید",
+                                                        onClick = { viewModel.addToCart(ad.id, ad.title, ad.price, ad.seller) },
+                                                        compact = true
+                                                    )
+                                                }
                                             }
                                         }
                                     }

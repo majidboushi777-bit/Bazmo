@@ -105,6 +105,8 @@ import com.example.ui.components.BazmoInput
 import com.example.ui.components.BazmoOutlineButton
 import com.example.ui.components.BazmoPrimaryButton
 import com.example.ui.components.BazmoSoftButton
+import com.example.ui.components.BazmoSubTabBar
+import com.example.ui.components.BazmoSubTabItem
 import com.example.ui.components.BazmoWarrantyBox
 import com.example.ui.theme.AppBackground
 import com.example.ui.theme.BazmoThemeManager
@@ -918,6 +920,7 @@ private fun ModalContent(
             val curUser = state.session.currentUser
             var fullName by rememberSaveable { mutableStateOf(curUser?.fullName ?: state.activeDisplayName) }
             var phone by rememberSaveable { mutableStateOf(curUser?.phone ?: "") }
+            var newPassword by rememberSaveable { mutableStateOf("") }
             val assignedTier = if (state.session.isAdminUser) "ادمین"
             else BazmoRoles.normalizeTier(curUser?.tier ?: BazmoRoles.REPAIR_TECH)
             val regProv = curUser?.province?.ifBlank { state.session.province } ?: state.session.province
@@ -986,7 +989,14 @@ private fun ModalContent(
                 )
             }
             BazmoInput(fullName, { fullName = it }, "نام و نام خانوادگی", modifier = Modifier.padding(bottom = 8.dp))
-            BazmoInput(phone, { phone = it }, "شماره تماس (اختیاری)", keyboardType = KeyboardType.Phone, modifier = Modifier.padding(bottom = 10.dp))
+            BazmoInput(phone, { phone = it }, "شماره تماس (اختیاری)", keyboardType = KeyboardType.Phone, modifier = Modifier.padding(bottom = 8.dp))
+            BazmoInput(
+                value = newPassword,
+                onValueChange = { newPassword = it },
+                placeholder = "رمز عبور جدید (اختیاری - حداقل ۶ کاراکتر)",
+                keyboardType = KeyboardType.Password,
+                modifier = Modifier.padding(bottom = 10.dp)
+            )
             BazmoWarrantyBox(
                 text = "📍 آدرس ثبت‌شده: استان $regProv، $regCity ($regRegion)\n🔒 تغییر آدرس ثبت‌شده حساب کاربری فقط توسط مدیر سیستم امکان‌پذیر است.",
                 modifier = Modifier
@@ -995,7 +1005,7 @@ private fun ModalContent(
             )
             BazmoPrimaryButton(
                 text = "✓ ذخیره اطلاعات پروفایل",
-                onClick = { viewModel.saveOwnProfile(fullName, phone) },
+                onClick = { viewModel.saveOwnProfile(fullName, phone, newPassword) },
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -1208,9 +1218,16 @@ private fun ModalContent(
         BazmoModal.Cart -> {
             val cart = state.session.cart
             val total = cart.sumOf { it.price * it.qty }
-            var chkFirst by rememberSaveable { mutableStateOf("") }
-            var chkLast by rememberSaveable { mutableStateOf("") }
-            var chkPhone by rememberSaveable { mutableStateOf("") }
+            val curUser = state.session.currentUser
+            val nameTokens = (curUser?.fullName?.trim().orEmpty().ifBlank { state.activeDisplayName })
+                .split(Regex("\\s+"))
+                .filter { it.isNotBlank() }
+            val defaultFirst = nameTokens.firstOrNull().orEmpty()
+            val defaultLast = nameTokens.drop(1).joinToString(" ")
+            var deliveryType by rememberSaveable { mutableStateOf("پیک") }
+            var chkFirst by rememberSaveable { mutableStateOf(defaultFirst) }
+            var chkLast by rememberSaveable { mutableStateOf(defaultLast) }
+            var chkPhone by rememberSaveable { mutableStateOf(curUser?.phone?.trim().orEmpty()) }
             var chkAddr by rememberSaveable { mutableStateOf("") }
 
             ModalHeader("🛒 سبد خرید شما", { viewModel.closeModal() })
@@ -1262,28 +1279,39 @@ private fun ModalContent(
                     Text(total.formatToman(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black, color = Navy)
                 }
                 HorizontalDivider(color = BorderLight, modifier = Modifier.padding(vertical = 8.dp))
-                BazmoCard(containerColor = SoftSurface) {
-                    Text(
-                        text = "🛵 ارسال با پیک",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                    BazmoInput(chkFirst, { chkFirst = it }, "نام", modifier = Modifier.padding(bottom = 8.dp))
-                    BazmoInput(chkLast, { chkLast = it }, "نام خانوادگی", modifier = Modifier.padding(bottom = 8.dp))
-                    BazmoInput(chkPhone, { chkPhone = it }, "شماره تلفن همراه", keyboardType = KeyboardType.Phone, modifier = Modifier.padding(bottom = 8.dp))
-                    BazmoInput(chkAddr, { chkAddr = it }, "آدرس دقیق در ${state.session.city}", modifier = Modifier.padding(bottom = 10.dp))
-                    BazmoPrimaryButton(
-                        text = "تایید و ثبت سفارش با پیک",
-                        onClick = { viewModel.submitOrder("پیک", chkFirst, chkLast, chkPhone, chkAddr) },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-                BazmoOutlineButton(
-                    text = "🏪 دریافت حضوری از فروشگاه",
-                    onClick = { viewModel.submitOrder("حضوری") },
-                    modifier = Modifier.fillMaxWidth()
+                BazmoSubTabBar(
+                    tabs = listOf(
+                        BazmoSubTabItem("پیک", "🛵 ارسال با پیک"),
+                        BazmoSubTabItem("حضوری", "🏪 تحویل حضوری")
+                    ),
+                    selectedKey = deliveryType,
+                    onSelect = { deliveryType = it }
                 )
+                if (deliveryType == "پیک") {
+                    BazmoCard(containerColor = SoftSurface) {
+                        BazmoInput(chkFirst, { chkFirst = it }, "نام", modifier = Modifier.padding(bottom = 8.dp))
+                        BazmoInput(chkLast, { chkLast = it }, "نام خانوادگی", modifier = Modifier.padding(bottom = 8.dp))
+                        BazmoInput(chkPhone, { chkPhone = it }, "شماره تلفن همراه", keyboardType = KeyboardType.Phone, modifier = Modifier.padding(bottom = 8.dp))
+                        BazmoInput(chkAddr, { chkAddr = it }, "آدرس دقیق در ${state.session.city}", modifier = Modifier.padding(bottom = 10.dp))
+                        BazmoPrimaryButton(
+                            text = "✓ ثبت نهایی سفارش با پیک",
+                            onClick = { viewModel.submitOrder("پیک", chkFirst, chkLast, chkPhone, chkAddr) },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                } else {
+                    BazmoCard(containerColor = SoftSurface) {
+                        BazmoWarrantyBox(
+                            text = "🏪 سفارش به فروشگاه ارسال می‌شود و پس از تایید، آماده تحویل حضوری در ${state.session.city} خواهد بود.",
+                            modifier = Modifier.padding(bottom = 10.dp)
+                        )
+                        BazmoPrimaryButton(
+                            text = "✓ ثبت نهایی سفارش حضوری",
+                            onClick = { viewModel.submitOrder("حضوری") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
             }
         }
 

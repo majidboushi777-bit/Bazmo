@@ -1068,3 +1068,70 @@ fun BazmoPromoBannerGrid(
     }
 }
 
+data class BazmoSubTabItem(
+    val key: String,
+    val label: String,
+    val testTag: String? = null
+)
+
+@Composable
+fun BazmoSubTabBar(
+    tabs: List<BazmoSubTabItem>,
+    selectedKey: String,
+    onSelect: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        color = SoftSurface,
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, BorderLight),
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(bottom = 10.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            tabs.forEach { tab ->
+                val active = tab.key == selectedKey
+                val bgCol by animateColorAsState(
+                    targetValue = if (active) CardSurface else Color.Transparent,
+                    animationSpec = tween(150),
+                    label = "subTabBg"
+                )
+                val fgCol by animateColorAsState(
+                    targetValue = if (active) Navy else TextMuted,
+                    animationSpec = tween(150),
+                    label = "subTabFg"
+                )
+                Surface(
+                    color = bgCol,
+                    shape = RoundedCornerShape(10.dp),
+                    shadowElevation = if (active) 2.dp else 0.dp,
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 40.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable { onSelect(tab.key) }
+                        .let { m -> if (tab.testTag != null) m.testTag(tab.testTag) else m }
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = tab.label,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = if (active) FontWeight.Black else FontWeight.Bold,
+                            color = fgCol,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+        }
+    }
+}

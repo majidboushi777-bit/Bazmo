@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
@@ -38,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -86,6 +89,7 @@ fun MobileTabScreen(
     viewModel: BazmoViewModel
 ) {
     val mv = state.session.mobileView
+    val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
     val mobileBanners = remember(state.db.banners, state.session.province, state.session.city, state.session.region) {
         state.bannersForSection("mobile")
@@ -419,9 +423,10 @@ fun MobileTabScreen(
                         filtered.groupBy { it.brand }
                     }
 
-                    val mobileUserAds = remember(state.db.hwAds, mv.search) {
+                    val mobileUserAds = remember(state.db.hwAds, state.currentUid, mv.search) {
                         state.db.hwAds.filter { ad ->
-                            ad.status == "approved" && ad.section == "mobile" &&
+                            (ad.status == "approved" || ad.ownerId == state.currentUid) &&
+                                ad.section == "mobile" &&
                                 (mv.search.isBlank() ||
                                     ad.title.contains(mv.search, ignoreCase = true) ||
                                     ad.brand.contains(mv.search, ignoreCase = true) ||
@@ -685,7 +690,17 @@ fun MobileTabScreen(
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
                                                 BazmoBadge(ad.cat, BadgeTone.BLUE)
-                                                Text("📍 ${ad.city}", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                                                Row(
+                                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    if (ad.status != "approved") {
+                                                        BazmoBadge("در انتظار تایید", BadgeTone.GOLD)
+                                                    } else {
+                                                        BazmoBadge("تاییدشده", BadgeTone.GREEN)
+                                                    }
+                                                    Text("📍 ${ad.city}", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                                                }
                                             }
                                             Spacer(modifier = Modifier.height(6.dp))
                                             Text(
@@ -711,11 +726,29 @@ fun MobileTabScreen(
                                                     fontWeight = FontWeight.Black,
                                                     color = Navy
                                                 )
-                                                BazmoSoftButton(
-                                                    text = "💬 چت / جزئیات",
-                                                    onClick = { viewModel.openModal(BazmoModal.Chat(ad.id)) },
-                                                    compact = true
-                                                )
+                                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                    if (ad.phone.isNotBlank()) {
+                                                        BazmoSoftButton(
+                                                            text = "📞",
+                                                            onClick = {
+                                                                val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:${ad.phone}"))
+                                                                runCatching { context.startActivity(intent) }
+                                                                    .onFailure { viewModel.showToast("برنامه تماس روی این دستگاه یافت نشد") }
+                                                            },
+                                                            compact = true
+                                                        )
+                                                    }
+                                                    BazmoSoftButton(
+                                                        text = "💬 چت",
+                                                        onClick = { viewModel.openModal(BazmoModal.Chat(ad.id)) },
+                                                        compact = true
+                                                    )
+                                                    BazmoPrimaryButton(
+                                                        text = "🛒 خرید",
+                                                        onClick = { viewModel.addToCart(ad.id, ad.title, ad.price, ad.seller) },
+                                                        compact = true
+                                                    )
+                                                }
                                             }
                                         }
                                     }
