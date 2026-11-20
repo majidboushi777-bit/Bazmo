@@ -1,0 +1,21 @@
+{
+  "name": "bazmo-server",
+  "version": "1.0.0",
+  "description": "Bazmo backend API and PostgreSQL server for Weblines Cloud",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test tests/*.test.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "google-auth-library": "^9.15.1",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.13.1",
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

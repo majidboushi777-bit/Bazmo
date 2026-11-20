@@ -1,0 +1,338 @@
+{
+  "entities": {
+    "Admin": {
+      "description": "Explicit admin override entries by UID",
+      "properties": {
+        "email": { "type": "string" }
+      }
+    },
+    "User": {
+      "description": "Bazmo registered user profile with guild tier and cascading location",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "fullName": { "type": "string" },
+        "phone": { "type": "string" },
+        "tier": { "type": "string" },
+        "province": { "type": "string" },
+        "city": { "type": "string" },
+        "region": { "type": "string" },
+        "active": { "type": "boolean" },
+        "createdDateLabel": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["uid", "fullName", "tier", "province", "city", "region", "active", "createdAt"]
+    },
+    "UserInvite": {
+      "description": "Pre-provisioned user profile keyed by normalized lowercase email for allowlisted sign-in and profile transfer",
+      "properties": {
+        "email": { "type": "string" },
+        "fullName": { "type": "string" },
+        "phone": { "type": "string" },
+        "tier": { "type": "string" },
+        "province": { "type": "string" },
+        "city": { "type": "string" },
+        "region": { "type": "string" },
+        "active": { "type": "boolean" },
+        "createdDateLabel": { "type": "string" },
+        "sourceUserDocId": { "type": "string" },
+        "claimedByUid": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["email", "fullName", "tier", "province", "city", "region", "active", "createdAt"]
+    },
+    "Notification": {
+      "description": "Targeted notification broadcast by admin based on location and guild tier",
+      "properties": {
+        "title": { "type": "string" },
+        "body": { "type": "string" },
+        "type": { "type": "string" },
+        "province": { "type": "string" },
+        "city": { "type": "string" },
+        "region": { "type": "string" },
+        "tierFilter": { "type": "string" },
+        "sectionFilter": { "type": "string" },
+        "date": { "type": "string" },
+        "readBy": { "type": "array" },
+        "published": { "type": "boolean" },
+        "sortOrder": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["title", "body", "type", "province", "city", "region", "tierFilter", "published", "createdAt"]
+    },
+    "Store": {
+      "description": "Registered mobile, accessory, or hardware merchant store",
+      "properties": {
+        "name": { "type": "string" },
+        "province": { "type": "string" },
+        "city": { "type": "string" },
+        "region": { "type": "string" },
+        "phone": { "type": "string" },
+        "address": { "type": "string" },
+        "hours": { "type": "string" },
+        "rating": { "type": "string" },
+        "type": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "published": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["name", "province", "city", "region", "type", "published", "createdAt"]
+    },
+    "Mobile": {
+      "description": "Mobile phone catalog model",
+      "properties": {
+        "brand": { "type": "string" },
+        "model": { "type": "string" },
+        "specs": { "type": "string" },
+        "imgEmoji": { "type": "string" },
+        "sortOrder": { "type": "number" },
+        "published": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["brand", "model", "published", "createdAt"]
+    },
+    "StoreMobile": {
+      "description": "Store pricing offer for a mobile phone model",
+      "properties": {
+        "storeId": { "type": "string" },
+        "mobileId": { "type": "string" },
+        "price": { "type": "number" },
+        "info": { "type": "string" },
+        "published": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["storeId", "mobileId", "price", "published", "createdAt"]
+    },
+    "Accessory": {
+      "description": "Mobile accessory catalog item",
+      "properties": {
+        "cat": { "type": "string" },
+        "name": { "type": "string" },
+        "storeId": { "type": "string" },
+        "price": { "type": "number" },
+        "desc": { "type": "string" },
+        "published": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["cat", "name", "storeId", "price", "published", "createdAt"]
+    },
+    "Inquiry": {
+      "description": "User stock inquiry for an accessory",
+      "properties": {
+        "accId": { "type": "string" },
+        "accName": { "type": "string" },
+        "storeName": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "status": { "type": "string" },
+        "date": { "type": "string" },
+        "sortOrder": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["accId", "accName", "storeName", "userId", "status", "createdAt"]
+    },
+    "SwProblem": {
+      "description": "Software repair category tile",
+      "properties": {
+        "title": { "type": "string" },
+        "iconEmoji": { "type": "string" },
+        "published": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["title", "iconEmoji", "published", "createdAt"]
+    },
+    "Tutorial": {
+      "description": "Software repair tutorial listing",
+      "properties": {
+        "problemId": { "type": "string" },
+        "title": { "type": "string" },
+        "teacher": { "type": "string" },
+        "rating": { "type": "string" },
+        "price": { "type": "number" },
+        "terms": { "type": "string" },
+        "city": { "type": "string" },
+        "status": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["problemId", "title", "teacher", "price", "status", "ownerId", "createdAt"]
+    },
+    "SwRequest": {
+      "description": "Software file or service request",
+      "properties": {
+        "title": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "city": { "type": "string" },
+        "status": { "type": "string" },
+        "reply": { "type": "string" },
+        "published": { "type": "boolean" },
+        "sortOrder": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["title", "userId", "city", "status", "published", "createdAt"]
+    },
+    "Box": {
+      "description": "Repair box or dongle marketplace listing",
+      "properties": {
+        "name": { "type": "string" },
+        "price": { "type": "number" },
+        "seller": { "type": "string" },
+        "city": { "type": "string" },
+        "condition": { "type": "string" },
+        "status": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["name", "price", "seller", "city", "status", "ownerId", "createdAt"]
+    },
+    "HwCategory": {
+      "description": "Hardware spare part category",
+      "properties": {
+        "name": { "type": "string" },
+        "iconEmoji": { "type": "string" },
+        "published": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["name", "iconEmoji", "published", "createdAt"]
+    },
+    "HwAd": {
+      "description": "Hardware spare part classified ad",
+      "properties": {
+        "cat": { "type": "string" },
+        "title": { "type": "string" },
+        "brand": { "type": "string" },
+        "model": { "type": "string" },
+        "series": { "type": "string" },
+        "price": { "type": "number" },
+        "seller": { "type": "string" },
+        "phone": { "type": "string" },
+        "city": { "type": "string" },
+        "province": { "type": "string" },
+        "region": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "ownerName": { "type": "string" },
+        "status": { "type": "string" },
+        "desc": { "type": "string" },
+        "section": { "type": "string" },
+        "sortOrder": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["cat", "title", "price", "seller", "city", "province", "ownerId", "status", "createdAt"]
+    },
+    "HwRequest": {
+      "description": "Private user special hardware part request",
+      "properties": {
+        "brand": { "type": "string" },
+        "model": { "type": "string" },
+        "partType": { "type": "string" },
+        "series": { "type": "string" },
+        "city": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "status": { "type": "string" },
+        "note": { "type": "string" },
+        "sortOrder": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["brand", "model", "partType", "series", "userId", "status", "createdAt"]
+    },
+    "Order": {
+      "description": "User purchase order with delivery and customer PII",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "items": { "type": "array" },
+        "total": { "type": "number" },
+        "deliveryType": { "type": "string" },
+        "customer": { "type": "object" },
+        "status": { "type": "string" },
+        "date": { "type": "string" },
+        "city": { "type": "string" },
+        "sortOrder": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["userId", "items", "total", "deliveryType", "customer", "status", "createdAt"]
+    },
+    "ChatThread": {
+      "description": "Participant-scoped chat thread for a hardware ad",
+      "properties": {
+        "adId": { "type": "string" },
+        "buyerUid": { "type": "string" },
+        "sellerUid": { "type": "string" },
+        "participants": { "type": "array" },
+        "messages": { "type": "array" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["adId", "buyerUid", "sellerUid", "participants", "messages", "createdAt"]
+    },
+    "ForumPost": {
+      "description": "Reddit-style technical community thread for software or hardware boards",
+      "properties": {
+        "board": { "type": "string" },
+        "flair": { "type": "string" },
+        "author": { "type": "string" },
+        "authorUid": { "type": "string" },
+        "authorBadge": { "type": "string" },
+        "city": { "type": "string" },
+        "deviceTag": { "type": "string" },
+        "pinned": { "type": "boolean" },
+        "verifiedSolution": { "type": "boolean" },
+        "title": { "type": "string" },
+        "body": { "type": "string" },
+        "votes": { "type": "integer" },
+        "upvotedBy": { "type": "array" },
+        "downvotedBy": { "type": "array" },
+        "savedBy": { "type": "array" },
+        "createdAtMs": { "type": "number" },
+        "timeLabel": { "type": "string" },
+        "comments": { "type": "array" },
+        "published": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["board", "flair", "author", "authorUid", "title", "body", "votes", "published", "createdAt"]
+    },
+    "RegistrationRequest": {
+      "description": "Pre-login membership verification request submitted from login screen for admin approval",
+      "properties": {
+        "email": { "type": "string" },
+        "fullName": { "type": "string" },
+        "phone": { "type": "string" },
+        "requestedTier": { "type": "string" },
+        "province": { "type": "string" },
+        "city": { "type": "string" },
+        "region": { "type": "string" },
+        "note": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["email", "fullName", "phone", "requestedTier", "province", "city", "region", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/admins/{adminUid}": { "schema": { "$ref": "#/entities/Admin" }, "description": "Admin role entries" },
+    "/users/{userId}": { "schema": { "$ref": "#/entities/User" }, "description": "User profiles" },
+    "/user_invites/{inviteId}": { "schema": { "$ref": "#/entities/UserInvite" }, "description": "Pre-provisioned email invites allowlisting login and profile transfer" },
+    "/registration_requests/{reqId}": { "schema": { "$ref": "#/entities/RegistrationRequest" }, "description": "Pending membership registration requests awaiting phone verification" },
+    "/notifications/{notifId}": { "schema": { "$ref": "#/entities/Notification" }, "description": "Targeted admin notifications" },
+    "/stores/{storeId}": { "schema": { "$ref": "#/entities/Store" }, "description": "Merchant stores" },
+    "/mobiles/{mobileId}": { "schema": { "$ref": "#/entities/Mobile" }, "description": "Mobile models" },
+    "/store_mobiles/{offerId}": { "schema": { "$ref": "#/entities/StoreMobile" }, "description": "Store mobile price offers" },
+    "/accessories/{accId}": { "schema": { "$ref": "#/entities/Accessory" }, "description": "Accessories catalog" },
+    "/inquiries/{inquiryId}": { "schema": { "$ref": "#/entities/Inquiry" }, "description": "Accessory stock inquiries" },
+    "/sw_problems/{problemId}": { "schema": { "$ref": "#/entities/SwProblem" }, "description": "Software problem categories" },
+    "/tutorials/{tutorialId}": { "schema": { "$ref": "#/entities/Tutorial" }, "description": "Software tutorials" },
+    "/sw_requests/{reqId}": { "schema": { "$ref": "#/entities/SwRequest" }, "description": "Software requests" },
+    "/boxes/{boxId}": { "schema": { "$ref": "#/entities/Box" }, "description": "Repair boxes and dongles" },
+    "/hw_categories/{catId}": { "schema": { "$ref": "#/entities/HwCategory" }, "description": "Hardware part categories" },
+    "/hw_ads/{adId}": { "schema": { "$ref": "#/entities/HwAd" }, "description": "User classified ads across hardware, mobile, and accessories" },
+    "/hw_requests/{reqId}": { "schema": { "$ref": "#/entities/HwRequest" }, "description": "Hardware special part requests" },
+    "/orders/{orderId}": { "schema": { "$ref": "#/entities/Order" }, "description": "Customer orders" },
+    "/chats/{threadId}": { "schema": { "$ref": "#/entities/ChatThread" }, "description": "Buyer-seller chat threads" },
+    "/forum_posts/{postId}": { "schema": { "$ref": "#/entities/ForumPost" }, "description": "Technical forum threads" }
+  }
+}

@@ -1,0 +1,15 @@
+.git
+.gradle
+.aistudio
+.build-outputs
+app
+build
+gradle
+/public
+server/node_modules
+*.apk
+*.aab
+*.jks
+*.keystore
+*.keystore.base64
+.env

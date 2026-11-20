@@ -1,0 +1,668 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        ('email' in request.auth.token &&
+          request.auth.token.email.lower() in ['majidboushi777@gmail.com', 'majid.boushi77@gmail.com'] &&
+          'email_verified' in request.auth.token &&
+          request.auth.token.email_verified == true) ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function hasVerifiedEmail() {
+      return isSignedIn() &&
+        'email' in request.auth.token &&
+        'email_verified' in request.auth.token &&
+        request.auth.token.email_verified == true;
+    }
+
+    function hasActiveInviteForAuthEmail() {
+      return hasVerifiedEmail() &&
+        exists(/databases/$(database)/documents/user_invites/$(request.auth.token.email.lower())) &&
+        get(/databases/$(database)/documents/user_invites/$(request.auth.token.email.lower())).data.active == true;
+    }
+
+    function isAllowedUser() {
+      return isAdmin() || (
+        isSignedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true
+      );
+    }
+
+    function currentUserTier() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tier;
+    }
+
+    function isStoreCreatorRole() {
+      return isAdmin() || (
+        isAllowedUser() &&
+        currentUserTier() in ['عمده‌فروش موبایل', 'عمده‌فروش جانبی', 'قطعه‌فروش']
+      );
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9._-]+$');
+    }
+
+    function isValidEmailDocId(id) {
+      return id is string &&
+        id.size() >= 5 &&
+        id.size() <= 200 &&
+        id == id.lower() &&
+        id.matches('^[^/\\s@]+@[^/\\s@]+\\.[^/\\s@]+$');
+    }
+
+    function isValidString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isValidTimestamp(ts) {
+      return ts is timestamp && ts <= request.time;
+    }
+
+    function isAllowedMemberTier(tier) {
+      return tier in [
+        'تعمیرکار',
+        'نرم‌افزارکار',
+        'فروشنده موبایل',
+        'فروشنده جانبی',
+        'عمده‌فروش موبایل',
+        'عمده‌فروش جانبی',
+        'قطعه‌فروش'
+      ];
+    }
+
+    function isValidUserDoc(data, userId) {
+      return data.keys().hasAll(['uid', 'fullName', 'tier', 'province', 'city', 'region', 'active', 'createdAt']) &&
+        data.keys().hasOnly(['uid', 'email', 'fullName', 'phone', 'tier', 'province', 'city', 'region', 'active', 'createdDateLabel', 'createdAt', 'updatedAt']) &&
+        data.uid == userId &&
+        (!('email' in data) || isValidString(data.email, 0, 200)) &&
+        isValidString(data.fullName, 1, 120) &&
+        (!('phone' in data) || isValidString(data.phone, 0, 40)) &&
+        (isAllowedMemberTier(data.tier) || data.tier == 'ادمین') &&
+        isValidString(data.province, 1, 80) &&
+        isValidString(data.city, 1, 80) &&
+        isValidString(data.region, 1, 80) &&
+        data.active is bool &&
+        (!('createdDateLabel' in data) || isValidString(data.createdDateLabel, 0, 40)) &&
+        isValidTimestamp(data.createdAt) &&
+        (!('updatedAt' in data) || isValidTimestamp(data.updatedAt));
+    }
+
+    function isValidUserInvite(data) {
+      return data.keys().hasAll(['email', 'fullName', 'tier', 'province', 'city', 'region', 'active', 'createdAt']) &&
+        data.keys().hasOnly(['email', 'fullName', 'phone', 'tier', 'province', 'city', 'region', 'active', 'createdDateLabel', 'sourceUserDocId', 'claimedByUid', 'createdAt', 'updatedAt']) &&
+        isValidString(data.email, 5, 200) &&
+        data.email == data.email.lower() &&
+        isValidString(data.fullName, 1, 120) &&
+        (!('phone' in data) || isValidString(data.phone, 0, 40)) &&
+        (isAllowedMemberTier(data.tier) || data.tier == 'ادمین') &&
+        isValidString(data.province, 1, 80) &&
+        isValidString(data.city, 1, 80) &&
+        isValidString(data.region, 1, 80) &&
+        data.active is bool &&
+        (!('createdDateLabel' in data) || isValidString(data.createdDateLabel, 0, 40)) &&
+        (!('sourceUserDocId' in data) || isValidString(data.sourceUserDocId, 0, 128)) &&
+        (!('claimedByUid' in data) || isValidString(data.claimedByUid, 0, 128)) &&
+        isValidTimestamp(data.createdAt) &&
+        (!('updatedAt' in data) || isValidTimestamp(data.updatedAt));
+    }
+
+    function isValidRegistrationRequest(data) {
+      return data.keys().hasAll(['email', 'fullName', 'phone', 'requestedTier', 'province', 'city', 'region', 'status', 'createdAt']) &&
+        data.keys().hasOnly(['email', 'fullName', 'phone', 'requestedTier', 'province', 'city', 'region', 'note', 'status', 'createdAt', 'updatedAt']) &&
+        isValidString(data.email, 5, 200) &&
+        data.email == data.email.lower() &&
+        data.email.matches('^[^/\\s@]+@[^/\\s@]+\\.[^/\\s@]+$') &&
+        isValidString(data.fullName, 1, 120) &&
+        isValidString(data.phone, 5, 40) &&
+        isAllowedMemberTier(data.requestedTier) &&
+        isValidString(data.province, 1, 80) &&
+        isValidString(data.city, 1, 80) &&
+        isValidString(data.region, 1, 80) &&
+        (!('note' in data) || isValidString(data.note, 0, 400)) &&
+        data.status in ['pending', 'approved', 'rejected'] &&
+        isValidTimestamp(data.createdAt) &&
+        (!('updatedAt' in data) || isValidTimestamp(data.updatedAt));
+    }
+
+    function isValidNotification(data) {
+      return data.keys().hasAll(['title', 'body', 'type', 'province', 'city', 'region', 'tierFilter', 'published', 'createdAt']) &&
+        data.keys().hasOnly(['title', 'body', 'type', 'province', 'city', 'region', 'tierFilter', 'sectionFilter', 'date', 'readBy', 'published', 'sortOrder', 'createdAt']) &&
+        isValidString(data.title, 1, 200) &&
+        isValidString(data.body, 1, 2000) &&
+        isValidString(data.type, 1, 80) &&
+        isValidString(data.province, 1, 80) &&
+        isValidString(data.city, 1, 80) &&
+        isValidString(data.region, 1, 80) &&
+        isValidString(data.tierFilter, 1, 80) &&
+        (!('sectionFilter' in data) || isValidString(data.sectionFilter, 0, 80)) &&
+        (!('date' in data) || isValidString(data.date, 0, 40)) &&
+        (!('readBy' in data) || data.readBy is list) &&
+        data.published == true &&
+        (!('sortOrder' in data) || data.sortOrder is number) &&
+        isValidTimestamp(data.createdAt);
+    }
+
+    function isValidStore(data) {
+      return data.keys().hasAll(['name', 'province', 'city', 'region', 'type', 'published', 'createdAt']) &&
+        data.keys().hasOnly(['name', 'province', 'city', 'region', 'phone', 'address', 'hours', 'rating', 'type', 'ownerId', 'published', 'createdAt']) &&
+        isValidString(data.name, 1, 140) &&
+        isValidString(data.province, 1, 80) &&
+        isValidString(data.city, 1, 80) &&
+        isValidString(data.region, 1, 80) &&
+        (!('phone' in data) || isValidString(data.phone, 0, 40)) &&
+        (!('address' in data) || isValidString(data.address, 0, 300)) &&
+        (!('hours' in data) || isValidString(data.hours, 0, 80)) &&
+        (!('rating' in data) || isValidString(data.rating, 0, 20)) &&
+        data.type in ['mobile', 'acc', 'hw', 'both'] &&
+        (!('ownerId' in data) || isValidString(data.ownerId, 0, 128)) &&
+        data.published == true &&
+        isValidTimestamp(data.createdAt);
+    }
+
+    function isValidMobile(data) {
+      return data.keys().hasAll(['brand', 'model', 'published', 'createdAt']) &&
+        data.keys().hasOnly(['brand', 'model', 'specs', 'imgEmoji', 'sortOrder', 'published', 'createdAt']) &&
+        isValidString(data.brand, 1, 80) &&
+        isValidString(data.model, 1, 140) &&
+        (!('specs' in data) || isValidString(data.specs, 0, 300)) &&
+        (!('imgEmoji' in data) || isValidString(data.imgEmoji, 0, 16)) &&
+        (!('sortOrder' in data) || data.sortOrder is number) &&
+        data.published == true &&
+        isValidTimestamp(data.createdAt);
+    }
+
+    function isValidStoreMobile(data) {
+      return data.keys().hasAll(['storeId', 'mobileId', 'price', 'published', 'createdAt']) &&
+        data.keys().hasOnly(['storeId', 'mobileId', 'price', 'info', 'published', 'createdAt']) &&
+        isValidString(data.storeId, 1, 128) &&
+        isValidString(data.mobileId, 1, 128) &&
+        data.price is number && data.price > 0 &&
+        (!('info' in data) || isValidString(data.info, 0, 300)) &&
+        data.published == true &&
+        isValidTimestamp(data.createdAt);
+    }
+
+    function isValidAccessory(data) {
+      return data.keys().hasAll(['cat', 'name', 'storeId', 'price', 'published', 'createdAt']) &&
+        data.keys().hasOnly(['cat', 'name', 'storeId', 'price', 'desc', 'published', 'createdAt']) &&
+        isValidString(data.cat, 1, 80) &&
+        isValidString(data.name, 1, 160) &&
+        isValidString(data.storeId, 1, 128) &&
+        data.price is number && data.price > 0 &&
+        (!('desc' in data) || isValidString(data.desc, 0, 500)) &&
+        data.published == true &&
+        isValidTimestamp(data.createdAt);
+    }
+
+    function isValidInquiry(data) {
+      return data.keys().hasAll(['accId', 'accName', 'storeName', 'userId', 'status', 'createdAt']) &&
+        data.keys().hasOnly(['accId', 'accName', 'storeName', 'userId', 'userName', 'status', 'date', 'sortOrder', 'createdAt']) &&
+        isValidString(data.accId, 1, 128) &&
+        isValidString(data.accName, 1, 200) &&
+        isValidString(data.storeName, 1, 160) &&
+        isValidString(data.userId, 1, 128) &&
+        (!('userName' in data) || isValidString(data.userName, 0, 120)) &&
+        isValidString(data.status, 1, 160) &&
+        (!('date' in data) || isValidString(data.date, 0, 40)) &&
+        (!('sortOrder' in data) || data.sortOrder is number) &&
+        isValidTimestamp(data.createdAt);
+    }
+
+    function isValidSwProblem(data) {
+      return data.keys().hasAll(['title', 'iconEmoji', 'published', 'createdAt']) &&
+        data.keys().hasOnly(['title', 'iconEmoji', 'published', 'createdAt']) &&
+        isValidString(data.title, 1, 120) &&
+        isValidString(data.iconEmoji, 1, 16) &&
+        data.published == true &&
+        isValidTimestamp(data.createdAt);
+    }
+
+    function isValidTutorial(data) {
+      return data.keys().hasAll(['problemId', 'title', 'teacher', 'price', 'status', 'ownerId', 'createdAt']) &&
+        data.keys().hasOnly(['problemId', 'title', 'teacher', 'rating', 'price', 'terms', 'city', 'status', 'ownerId', 'createdAt']) &&
+        isValidString(data.problemId, 1, 128) &&
+        isValidString(data.title, 1, 240) &&
+        isValidString(data.teacher, 1, 120) &&
+        (!('rating' in data) || isValidString(data.rating, 0, 20)) &&
+        data.price is number && data.price > 0 &&
+        (!('terms' in data) || isValidString(data.terms, 0, 500)) &&
+        (!('city' in data) || isValidString(data.city, 0, 80)) &&
+        data.status in ['pending', 'approved', 'rejected'] &&
+        isValidString(data.ownerId, 1, 128) &&
+        isValidTimestamp(data.createdAt);
+    }
+
+    function isValidSwRequest(data) {
+      return data.keys().hasAll(['title', 'userId', 'city', 'status', 'published', 'createdAt']) &&
+        data.keys().hasOnly(['title', 'userId', 'userName', 'city', 'status', 'reply', 'published', 'sortOrder', 'createdAt']) &&
+        isValidString(data.title, 1, 500) &&
+        isValidString(data.userId, 1, 128) &&
+        (!('userName' in data) || isValidString(data.userName, 0, 120)) &&
+        isValidString(data.city, 1, 80) &&
+        isValidString(data.status, 1, 120) &&
+        (!('reply' in data) || isValidString(data.reply, 0, 1000)) &&
+        data.published == true &&
+        (!('sortOrder' in data) || data.sortOrder is number) &&
+        isValidTimestamp(data.createdAt);
+    }
+
+    function isValidBox(data) {
+      return data.keys().hasAll(['name', 'price', 'seller', 'city', 'status', 'ownerId', 'createdAt']) &&
+        data.keys().hasOnly(['name', 'price', 'seller', 'city', 'condition', 'status', 'ownerId', 'createdAt']) &&
+        isValidString(data.name, 1, 200) &&
+        data.price is number && data.price > 0 &&
+        isValidString(data.seller, 1, 120) &&
+        isValidString(data.city, 1, 80) &&
+        (!('condition' in data) || isValidString(data.condition, 0, 120)) &&
+        data.status in ['pending', 'approved', 'rejected'] &&
+        isValidString(data.ownerId, 1, 128) &&
+        isValidTimestamp(data.createdAt);
+    }
+
+    function isValidHwCategory(data) {
+      return data.keys().hasAll(['name', 'iconEmoji', 'published', 'createdAt']) &&
+        data.keys().hasOnly(['name', 'iconEmoji', 'published', 'createdAt']) &&
+        isValidString(data.name, 1, 120) &&
+        isValidString(data.iconEmoji, 1, 16) &&
+        data.published == true &&
+        isValidTimestamp(data.createdAt);
+    }
+
+    function isValidHwAd(data) {
+      return data.keys().hasAll(['cat', 'title', 'price', 'seller', 'city', 'province', 'ownerId', 'status', 'createdAt']) &&
+        data.keys().hasOnly(['cat', 'title', 'brand', 'model', 'series', 'price', 'seller', 'phone', 'city', 'province', 'region', 'ownerId', 'ownerName', 'status', 'desc', 'section', 'sortOrder', 'createdAt']) &&
+        isValidString(data.cat, 1, 80) &&
+        isValidString(data.title, 1, 200) &&
+        (!('brand' in data) || isValidString(data.brand, 0, 80)) &&
+        (!('model' in data) || isValidString(data.model, 0, 120)) &&
+        (!('series' in data) || isValidString(data.series, 0, 120)) &&
+        data.price is number && data.price > 0 &&
+        isValidString(data.seller, 1, 120) &&
+        (!('phone' in data) || isValidString(data.phone, 0, 40)) &&
+        isValidString(data.city, 1, 80) &&
+        isValidString(data.province, 1, 80) &&
+        (!('region' in data) || isValidString(data.region, 0, 80)) &&
+        isValidString(data.ownerId, 1, 128) &&
+        (!('ownerName' in data) || isValidString(data.ownerName, 0, 120)) &&
+        data.status in ['pending', 'approved', 'rejected'] &&
+        (!('desc' in data) || isValidString(data.desc, 0, 1500)) &&
+        (!('section' in data) || data.section in ['hw', 'mobile', 'acc']) &&
+        (!('sortOrder' in data) || data.sortOrder is number) &&
+        isValidTimestamp(data.createdAt);
+    }
+
+    function isValidHwRequest(data) {
+      return data.keys().hasAll(['brand', 'model', 'partType', 'series', 'userId', 'status', 'createdAt']) &&
+        data.keys().hasOnly(['brand', 'model', 'partType', 'series', 'city', 'userId', 'userName', 'status', 'note', 'sortOrder', 'createdAt']) &&
+        isValidString(data.brand, 1, 80) &&
+        isValidString(data.model, 1, 120) &&
+        isValidString(data.partType, 1, 80) &&
+        isValidString(data.series, 1, 120) &&
+        (!('city' in data) || isValidString(data.city, 0, 80)) &&
+        isValidString(data.userId, 1, 128) &&
+        (!('userName' in data) || isValidString(data.userName, 0, 120)) &&
+        isValidString(data.status, 1, 160) &&
+        (!('note' in data) || isValidString(data.note, 0, 1000)) &&
+        (!('sortOrder' in data) || data.sortOrder is number) &&
+        isValidTimestamp(data.createdAt);
+    }
+
+    function isValidOrder(data) {
+      return data.keys().hasAll(['userId', 'items', 'total', 'deliveryType', 'customer', 'status', 'createdAt']) &&
+        data.keys().hasOnly(['userId', 'userName', 'items', 'total', 'deliveryType', 'customer', 'status', 'date', 'city', 'sortOrder', 'createdAt']) &&
+        isValidString(data.userId, 1, 128) &&
+        (!('userName' in data) || isValidString(data.userName, 0, 120)) &&
+        data.items is list && data.items.size() > 0 && data.items.size() <= 50 &&
+        data.total is number && data.total > 0 &&
+        data.deliveryType in ['پیک', 'حضوری'] &&
+        data.customer is map &&
+        isValidString(data.status, 1, 100) &&
+        (!('date' in data) || isValidString(data.date, 0, 40)) &&
+        (!('city' in data) || isValidString(data.city, 0, 80)) &&
+        (!('sortOrder' in data) || data.sortOrder is number) &&
+        isValidTimestamp(data.createdAt);
+    }
+
+    function isValidChatThread(data) {
+      return data.keys().hasAll(['adId', 'buyerUid', 'sellerUid', 'participants', 'messages', 'createdAt']) &&
+        data.keys().hasOnly(['adId', 'buyerUid', 'sellerUid', 'participants', 'messages', 'createdAt', 'updatedAt']) &&
+        isValidString(data.adId, 1, 128) &&
+        isValidString(data.buyerUid, 1, 128) &&
+        isValidString(data.sellerUid, 1, 128) &&
+        data.participants is list &&
+        data.participants.size() >= 1 && data.participants.size() <= 3 &&
+        data.buyerUid in data.participants &&
+        data.sellerUid in data.participants &&
+        data.messages is list &&
+        isValidTimestamp(data.createdAt) &&
+        (!('updatedAt' in data) || isValidTimestamp(data.updatedAt));
+    }
+
+    function isValidForumPost(data) {
+      return data.keys().hasAll(['board', 'flair', 'author', 'authorUid', 'title', 'body', 'votes', 'published', 'createdAt']) &&
+        data.keys().hasOnly(['board', 'flair', 'author', 'authorUid', 'authorBadge', 'city', 'deviceTag', 'pinned', 'verifiedSolution', 'title', 'body', 'votes', 'upvotedBy', 'downvotedBy', 'savedBy', 'createdAtMs', 'timeLabel', 'comments', 'published', 'createdAt']) &&
+        data.board in ['software', 'hardware'] &&
+        isValidString(data.flair, 1, 80) &&
+        isValidString(data.author, 1, 120) &&
+        isValidString(data.authorUid, 1, 128) &&
+        (!('authorBadge' in data) || isValidString(data.authorBadge, 0, 80)) &&
+        (!('city' in data) || isValidString(data.city, 0, 80)) &&
+        (!('deviceTag' in data) || isValidString(data.deviceTag, 0, 120)) &&
+        (!('pinned' in data) || data.pinned is bool) &&
+        (!('verifiedSolution' in data) || data.verifiedSolution is bool) &&
+        isValidString(data.title, 1, 300) &&
+        isValidString(data.body, 1, 4000) &&
+        data.votes is int &&
+        (!('upvotedBy' in data) || data.upvotedBy is list) &&
+        (!('downvotedBy' in data) || data.downvotedBy is list) &&
+        (!('savedBy' in data) || data.savedBy is list) &&
+        (!('createdAtMs' in data) || data.createdAtMs is number) &&
+        (!('timeLabel' in data) || isValidString(data.timeLabel, 0, 60)) &&
+        (!('comments' in data) || data.comments is list) &&
+        data.published == true &&
+        isValidTimestamp(data.createdAt);
+    }
+
+    // ==================== COLLECTIONS ====================
+
+    match /admins/{adminUid} {
+      allow get: if isOwner(adminUid) || isAdmin();
+      allow list: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
+    match /users/{userId} {
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
+      allow create: if isValidId(userId) && isValidUserDoc(incoming(), userId) && (
+        isAdmin() ||
+        (isOwner(userId) &&
+          hasActiveInviteForAuthEmail() &&
+          incoming().active == true &&
+          incoming().tier == get(/databases/$(database)/documents/user_invites/$(request.auth.token.email.lower())).data.tier &&
+          isAllowedMemberTier(incoming().tier))
+      );
+      allow update: if (
+        isAdmin() &&
+        incoming().active is bool &&
+        (!('tier' in incoming()) || !('tier' in existing()) || incoming().tier == existing().tier || isAllowedMemberTier(incoming().tier) || incoming().tier == 'ادمین')
+      ) || (
+        isValidUserDoc(incoming(), userId) &&
+        incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt &&
+        isOwner(userId) &&
+        existing().active == true &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fullName', 'phone', 'province', 'city', 'region', 'updatedAt']) &&
+        incoming().tier == existing().tier &&
+        incoming().active == existing().active
+      );
+      allow delete: if isAdmin() || (
+        hasVerifiedEmail() &&
+        existing().uid != request.auth.uid &&
+        'email' in existing() && existing().email != '' &&
+        existing().email.lower() == request.auth.token.email.lower()
+      );
+    }
+
+    match /user_invites/{inviteId} {
+      allow get: if isAdmin() || (
+        hasVerifiedEmail() &&
+        (inviteId == request.auth.token.email.lower() ||
+          (resource != null && existing().email == request.auth.token.email.lower()))
+      );
+      allow list: if isAdmin();
+      allow create: if isAdmin() && isValidEmailDocId(inviteId) && isValidUserInvite(incoming()) && incoming().email == inviteId;
+      allow update: if (
+        isAdmin() &&
+        incoming().active is bool &&
+        (!('tier' in incoming()) || !('tier' in existing()) || incoming().tier == existing().tier || isAllowedMemberTier(incoming().tier) || incoming().tier == 'ادمین')
+      ) || (
+        isValidUserInvite(incoming()) &&
+        incoming().email == existing().email &&
+        incoming().createdAt == existing().createdAt &&
+        hasVerifiedEmail() &&
+        existing().email == request.auth.token.email.lower() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['claimedByUid', 'updatedAt']) &&
+        incoming().claimedByUid == request.auth.uid
+      );
+      allow delete: if isAdmin();
+    }
+
+    match /registration_requests/{reqId} {
+      allow get, list: if isAdmin();
+      allow create: if isValidId(reqId) && isValidRegistrationRequest(incoming()) && incoming().status == 'pending';
+      allow update: if isAdmin() && isValidRegistrationRequest(incoming()) && incoming().createdAt == existing().createdAt;
+      allow delete: if isAdmin();
+    }
+
+    match /notifications/{notifId} {
+      allow get, list: if (isAllowedUser() && existing().published == true) || isAdmin();
+      allow create: if isAdmin() && isValidId(notifId) && isValidNotification(incoming());
+      allow update: if isAdmin() || (
+        isAllowedUser() && existing().published == true &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy']) &&
+        incoming().readBy is list &&
+        existing().readBy is list &&
+        incoming().readBy.hasAll(existing().readBy) &&
+        incoming().readBy.removeAll(existing().readBy).hasOnly([request.auth.uid]) &&
+        (request.auth.uid in incoming().readBy) &&
+        incoming().readBy.size() <= existing().readBy.size() + 1
+      );
+      allow delete: if isAdmin();
+    }
+
+    match /stores/{storeId} {
+      allow get, list: if (isAllowedUser() && existing().published == true) || isAdmin();
+      allow create: if isValidId(storeId) && isValidStore(incoming()) && (
+        isAdmin() ||
+        (isStoreCreatorRole() && incoming().ownerId == request.auth.uid)
+      );
+      allow update: if isAdmin() && isValidStore(incoming()) && incoming().createdAt == existing().createdAt;
+      allow delete: if isAdmin();
+    }
+
+    match /mobiles/{mobileId} {
+      allow get, list: if (isAllowedUser() && existing().published == true) || isAdmin();
+      allow create: if isAdmin() && isValidId(mobileId) && isValidMobile(incoming());
+      allow update: if isAdmin() && isValidMobile(incoming()) && incoming().createdAt == existing().createdAt;
+      allow delete: if isAdmin();
+    }
+
+    match /store_mobiles/{offerId} {
+      allow get, list: if (isAllowedUser() && existing().published == true) || isAdmin();
+      allow create: if isAdmin() && isValidId(offerId) && isValidStoreMobile(incoming());
+      allow update: if isAdmin() && isValidStoreMobile(incoming()) && incoming().createdAt == existing().createdAt;
+      allow delete: if isAdmin();
+    }
+
+    match /accessories/{accId} {
+      allow get, list: if (isAllowedUser() && existing().published == true) || isAdmin();
+      allow create: if isAdmin() && isValidId(accId) && isValidAccessory(incoming());
+      allow update: if isAdmin() && isValidAccessory(incoming()) && incoming().createdAt == existing().createdAt;
+      allow delete: if isAdmin();
+    }
+
+    match /inquiries/{inquiryId} {
+      allow get, list: if (isAllowedUser() && existing().userId == request.auth.uid) || isAdmin();
+      allow create: if isAllowedUser() && isValidId(inquiryId) &&
+        incoming().userId == request.auth.uid && isValidInquiry(incoming());
+      allow update: if isAdmin() && isValidInquiry(incoming()) &&
+        incoming().userId == existing().userId && incoming().createdAt == existing().createdAt;
+      allow delete: if isAdmin();
+    }
+
+    match /sw_problems/{problemId} {
+      allow get, list: if (isAllowedUser() && existing().published == true) || isAdmin();
+      allow create: if isAdmin() && isValidId(problemId) && isValidSwProblem(incoming());
+      allow update: if isAdmin() && isValidSwProblem(incoming()) && incoming().createdAt == existing().createdAt;
+      allow delete: if isAdmin();
+    }
+
+    match /tutorials/{tutorialId} {
+      allow get, list: if isAdmin() || (
+        isAllowedUser() &&
+        currentUserTier() == 'نرم‌افزارکار' &&
+        (existing().status == 'approved' || existing().ownerId == request.auth.uid)
+      );
+      allow create: if isValidId(tutorialId) && isValidTutorial(incoming()) && (
+        isAdmin() ||
+        (isAllowedUser() &&
+          currentUserTier() == 'نرم‌افزارکار' &&
+          incoming().ownerId == request.auth.uid &&
+          incoming().status == 'pending')
+      );
+      allow update: if isAdmin() && isValidTutorial(incoming()) &&
+        incoming().ownerId == existing().ownerId && incoming().createdAt == existing().createdAt;
+      allow delete: if isAdmin() || (
+        isAllowedUser() &&
+        currentUserTier() == 'نرم‌افزارکار' &&
+        existing().ownerId == request.auth.uid
+      );
+    }
+
+    match /sw_requests/{reqId} {
+      allow get, list: if (isAllowedUser() && existing().published == true) || isAdmin();
+      allow create: if isAllowedUser() && isValidId(reqId) &&
+        incoming().userId == request.auth.uid &&
+        (!('reply' in incoming()) || incoming().reply == '') &&
+        isValidSwRequest(incoming());
+      allow update: if isAdmin() && isValidSwRequest(incoming()) &&
+        incoming().userId == existing().userId && incoming().createdAt == existing().createdAt;
+      allow delete: if isAdmin();
+    }
+
+    match /boxes/{boxId} {
+      allow get, list: if (isAllowedUser() && (existing().status == 'approved' || existing().ownerId == request.auth.uid)) || isAdmin();
+      allow create: if isAllowedUser() && isValidId(boxId) &&
+        incoming().ownerId == request.auth.uid &&
+        (incoming().status == 'pending' || isAdmin()) &&
+        isValidBox(incoming());
+      allow update: if isAdmin() && isValidBox(incoming()) &&
+        incoming().ownerId == existing().ownerId && incoming().createdAt == existing().createdAt;
+      allow delete: if isAdmin() || (isAllowedUser() && existing().ownerId == request.auth.uid);
+    }
+
+    match /hw_categories/{catId} {
+      allow get, list: if (isAllowedUser() && existing().published == true) || isAdmin();
+      allow create: if isAdmin() && isValidId(catId) && isValidHwCategory(incoming());
+      allow update: if isAdmin() && isValidHwCategory(incoming()) && incoming().createdAt == existing().createdAt;
+      allow delete: if isAdmin();
+    }
+
+    match /hw_ads/{adId} {
+      allow get, list: if (isAllowedUser() && (existing().status == 'approved' || existing().ownerId == request.auth.uid)) || isAdmin();
+      allow create: if isAllowedUser() && isValidId(adId) &&
+        incoming().ownerId == request.auth.uid &&
+        (incoming().status == 'pending' || isAdmin()) &&
+        isValidHwAd(incoming());
+      allow update: if isValidHwAd(incoming()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt && (
+        isAdmin() ||
+        (isAllowedUser() && existing().ownerId == request.auth.uid &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['price']))
+      );
+      allow delete: if isAdmin() || (isAllowedUser() && existing().ownerId == request.auth.uid);
+    }
+
+    match /hw_requests/{reqId} {
+      allow get, list: if (isAllowedUser() && existing().userId == request.auth.uid) || isAdmin();
+      allow create: if isAllowedUser() && isValidId(reqId) &&
+        incoming().userId == request.auth.uid &&
+        (!('note' in incoming()) || incoming().note == '') &&
+        isValidHwRequest(incoming());
+      allow update: if isAdmin() && isValidHwRequest(incoming()) &&
+        incoming().userId == existing().userId && incoming().createdAt == existing().createdAt;
+      allow delete: if isAdmin();
+    }
+
+    match /orders/{orderId} {
+      allow get, list: if (isAllowedUser() && existing().userId == request.auth.uid) || isAdmin();
+      allow create: if isAllowedUser() && isValidId(orderId) &&
+        incoming().userId == request.auth.uid &&
+        isValidOrder(incoming());
+      allow update: if isAdmin() && isValidOrder(incoming()) &&
+        incoming().userId == existing().userId && incoming().createdAt == existing().createdAt;
+      allow delete: if isAdmin();
+    }
+
+    match /chats/{threadId} {
+      allow get, list: if (isAllowedUser() && (request.auth.uid in existing().participants)) || isAdmin();
+      allow create: if isAllowedUser() && isValidId(threadId) &&
+        (request.auth.uid in incoming().participants) &&
+        incoming().buyerUid == request.auth.uid &&
+        isValidChatThread(incoming());
+      allow update: if isValidChatThread(incoming()) &&
+        incoming().adId == existing().adId &&
+        incoming().buyerUid == existing().buyerUid &&
+        incoming().sellerUid == existing().sellerUid &&
+        incoming().participants == existing().participants &&
+        incoming().createdAt == existing().createdAt && (
+        isAdmin() ||
+        (isAllowedUser() && (request.auth.uid in existing().participants) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['messages', 'updatedAt']))
+      );
+      allow delete: if isAdmin();
+    }
+
+    match /forum_posts/{postId} {
+      allow get, list: if isAdmin() || (
+        isAllowedUser() &&
+        existing().published == true &&
+        ((existing().board == 'hardware' && currentUserTier() == 'تعمیرکار') ||
+         (existing().board == 'software' && currentUserTier() == 'نرم‌افزارکار'))
+      );
+      allow create: if isValidId(postId) && isValidForumPost(incoming()) && (
+        isAdmin() ||
+        (isAllowedUser() &&
+          incoming().authorUid == request.auth.uid &&
+          ((!('pinned' in incoming()) || incoming().pinned == false) && (!('verifiedSolution' in incoming()) || incoming().verifiedSolution == false)) &&
+          ((incoming().board == 'hardware' && currentUserTier() == 'تعمیرکار') ||
+           (incoming().board == 'software' && currentUserTier() == 'نرم‌افزارکار')))
+      );
+      allow update: if isValidForumPost(incoming()) &&
+        incoming().authorUid == existing().authorUid &&
+        incoming().createdAt == existing().createdAt && (
+        isAdmin() ||
+        (isAllowedUser() &&
+          existing().published == true &&
+          ((existing().board == 'hardware' && currentUserTier() == 'تعمیرکار') ||
+           (existing().board == 'software' && currentUserTier() == 'نرم‌افزارکار')) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['votes', 'upvotedBy', 'downvotedBy', 'savedBy', 'comments']))
+      );
+      allow delete: if isAdmin() || (
+        isAllowedUser() &&
+        existing().authorUid == request.auth.uid &&
+        ((existing().board == 'hardware' && currentUserTier() == 'تعمیرکار') ||
+         (existing().board == 'software' && currentUserTier() == 'نرم‌افزارکار'))
+      );
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
