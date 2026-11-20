@@ -1,5 +1,6 @@
 package com.example
 
+import android.app.Notification
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.BackgroundNotifConfig
@@ -697,5 +698,39 @@ class ExampleRobolectricTest {
         assertTrue(BazmoLocations.isAllScope("کل کشور"))
         assertTrue(BazmoLocations.isAllScope("همه شهرهای استان"))
         assertEquals("همه شهرها", AdminUserFilter().city)
+    }
+
+    @Test
+    fun `per-role section store creation and zwnj tier normalization enforce strict scoping`() {
+        assertEquals(BazmoRoles.PART_SELLER, BazmoRoles.normalizeTier("قطعه فروش"))
+        assertEquals(BazmoRoles.WHOLESALE_MOBILE, BazmoRoles.normalizeTier("عمده فروش موبایل"))
+        assertEquals(BazmoRoles.WHOLESALE_ACCESSORY, BazmoRoles.normalizeTier("عمده فروش جانبی"))
+
+        assertTrue(BazmoRoles.canCreateStoreInSection(BazmoRoles.PART_SELLER, isAdmin = false, section = "hw"))
+        assertFalse(BazmoRoles.canCreateStoreInSection(BazmoRoles.PART_SELLER, isAdmin = false, section = "mobile"))
+        assertFalse(BazmoRoles.canCreateStoreInSection(BazmoRoles.PART_SELLER, isAdmin = false, section = "acc"))
+
+        assertTrue(BazmoRoles.canCreateStoreInSection(BazmoRoles.WHOLESALE_MOBILE, isAdmin = false, section = "mobile"))
+        assertFalse(BazmoRoles.canCreateStoreInSection(BazmoRoles.WHOLESALE_MOBILE, isAdmin = false, section = "hw"))
+
+        assertTrue(BazmoRoles.canCreateStoreInSection(BazmoRoles.WHOLESALE_ACCESSORY, isAdmin = false, section = "acc"))
+        assertFalse(BazmoRoles.canCreateStoreInSection(BazmoRoles.WHOLESALE_ACCESSORY, isAdmin = false, section = "mobile"))
+
+        assertFalse(BazmoRoles.canCreateStoreInSection(BazmoRoles.REPAIR_TECH, isAdmin = false, section = "hw"))
+        assertTrue(BazmoRoles.canCreateStoreInSection(BazmoRoles.REPAIR_TECH, isAdmin = true, section = "hw"))
+        assertTrue(BazmoRoles.canCreateStoreInSection(BazmoRoles.REPAIR_TECH, isAdmin = true, section = "mobile"))
+        assertTrue(BazmoRoles.canCreateStoreInSection(BazmoRoles.REPAIR_TECH, isAdmin = true, section = "acc"))
+    }
+
+    @Test
+    fun `realtime background notification is secret visibility not ongoing and omits waiting text`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val notif = BazmoNotificationHelper.buildRealtimeServiceNotification(context)
+        assertEquals(Notification.VISIBILITY_SECRET, notif.visibility)
+        assertEquals(0, notif.flags and Notification.FLAG_ONGOING_EVENT)
+        val title = notif.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
+        val text = notif.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
+        assertFalse(title.contains("در انتظار"))
+        assertFalse(text.contains("در انتظار"))
     }
 }

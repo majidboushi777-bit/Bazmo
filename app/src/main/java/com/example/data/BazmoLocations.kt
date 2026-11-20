@@ -217,19 +217,31 @@ object BazmoRoles {
         PART_SELLER
     )
 
-    fun normalizeTier(tier: String): String =
-        if (tier in ALL_ROLES) tier else REPAIR_TECH
+    fun normalizeTier(tier: String): String {
+        if (tier in ALL_ROLES) return tier
+        val norm = BazmoLocations.normalizeZwnj(tier)
+        return ALL_ROLES.find { BazmoLocations.normalizeZwnj(it) == norm } ?: REPAIR_TECH
+    }
 
-    fun canCreateStore(tier: String, isAdmin: Boolean): Boolean =
-        isAdmin || tier in STORE_CREATOR_ROLES
+    fun canCreateStore(tier: String, isAdmin: Boolean): Boolean {
+        if (isAdmin) return true
+        val norm = BazmoLocations.normalizeZwnj(tier)
+        return STORE_CREATOR_ROLES.any { BazmoLocations.normalizeZwnj(it) == norm }
+    }
+
+    fun canCreateStoreInSection(tier: String, isAdmin: Boolean, section: String): Boolean {
+        if (isAdmin) return true
+        if (!canCreateStore(tier, false)) return false
+        return defaultStoreTypeForRole(tier) == section
+    }
 
     fun canAccessHardwareForum(tier: String, isAdmin: Boolean): Boolean =
-        isAdmin || tier == REPAIR_TECH
+        isAdmin || BazmoLocations.normalizeZwnj(tier) == BazmoLocations.normalizeZwnj(REPAIR_TECH)
 
     fun canAccessSoftwareSpecialized(tier: String, isAdmin: Boolean): Boolean =
-        isAdmin || tier == SOFTWARE_TECH
+        isAdmin || BazmoLocations.normalizeZwnj(tier) == BazmoLocations.normalizeZwnj(SOFTWARE_TECH)
 
-    fun defaultStoreTypeForRole(tier: String): String = when (tier) {
+    fun defaultStoreTypeForRole(tier: String): String = when (normalizeTier(tier)) {
         WHOLESALE_MOBILE -> "mobile"
         WHOLESALE_ACCESSORY -> "acc"
         PART_SELLER -> "hw"

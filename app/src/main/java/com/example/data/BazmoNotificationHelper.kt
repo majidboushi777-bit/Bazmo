@@ -51,9 +51,10 @@ object BazmoNotificationHelper {
     private const val CHANNEL_NAME = "اعلان‌های صنفی بازمو"
     private const val CHANNEL_DESC = "اطلاعیه‌ها، هشدارهای موجودی قطعه و پیام‌های مدیریت بازمو"
 
-    const val REALTIME_CHANNEL_ID = "bazmo_realtime_status"
-    private const val REALTIME_CHANNEL_NAME = "همگام‌سازی زنده اعلان‌ها"
-    private const val REALTIME_CHANNEL_DESC = "سرویس سبک پس‌زمینه برای دریافت آنی اعلان‌های بازمو"
+    const val REALTIME_CHANNEL_ID = "bazmo_realtime_bg_v2"
+    private const val LEGACY_REALTIME_CHANNEL_ID = "bazmo_realtime_status"
+    private const val REALTIME_CHANNEL_NAME = "همگام‌سازی پس‌زمینه بازمو"
+    private const val REALTIME_CHANNEL_DESC = "سرویس سبک پس‌زمینه برای دریافت آنی اعلان‌های بازمو بدون ایجاد مزاحمت"
     const val REALTIME_SERVICE_NOTIF_ID = 7740
 
     const val EXTRA_OPEN_NOTIFICATIONS = "bazmo_open_notifications"
@@ -147,6 +148,7 @@ object BazmoNotificationHelper {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
                 ?: return
+            runCatching { manager.deleteNotificationChannel(LEGACY_REALTIME_CHANNEL_ID) }
             if (manager.getNotificationChannel(CHANNEL_ID) == null) {
                 val channel = NotificationChannel(
                     CHANNEL_ID,
@@ -169,6 +171,7 @@ object BazmoNotificationHelper {
                     enableVibration(false)
                     setSound(null, null)
                     setShowBadge(false)
+                    lockscreenVisibility = Notification.VISIBILITY_SECRET
                 }
                 manager.createNotificationChannel(rtChannel)
             }
@@ -189,11 +192,12 @@ object BazmoNotificationHelper {
         )
         return NotificationCompat.Builder(context, REALTIME_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_bazmo)
-            .setContentTitle("بازمو • دریافت آنی اعلان‌ها فعال است")
-            .setContentText("در انتظار اعلان‌ها و پیام‌های جدید صنفی")
+            .setContentTitle("بازمو فعال است")
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .setOngoing(true)
+            .setVisibility(NotificationCompat.VISIBILITY_SECRET)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_DEFERRED)
+            .setOngoing(false)
             .setSilent(true)
             .setShowWhen(false)
             .setContentIntent(pendingIntent)

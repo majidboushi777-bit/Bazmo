@@ -12,7 +12,10 @@ const {
   DEFAULT_GOOGLE_CLIENT_IDS,
   normalizeEmail,
   isValidEmailFormat,
-  normalizeTier
+  normalizeTier,
+  defaultStoreTypeForRole,
+  canCreateStore,
+  canCreateStoreInSection
 } = require('../src/constants');
 const {
   canAccessForumBoard,
@@ -39,6 +42,18 @@ test('constants enforce 7-role RBAC rules with exact Persian strings', () => {
 
   assert.equal(normalizeTier('invalid_role'), 'تعمیرکار');
   assert.equal(normalizeTier('نرم\u200cافزارکار'), 'نرم\u200cافزارکار');
+  assert.equal(normalizeTier('قطعه فروش'), 'قطعه‌فروش');
+  assert.equal(defaultStoreTypeForRole('قطعه فروش'), 'hw');
+  assert.equal(defaultStoreTypeForRole('عمده\u200cفروش موبایل'), 'mobile');
+  assert.equal(defaultStoreTypeForRole('عمده\u200cفروش جانبی'), 'acc');
+
+  assert.equal(canCreateStore('قطعه فروش', false), true);
+  assert.equal(canCreateStoreInSection('قطعه فروش', false, 'hw'), true);
+  assert.equal(canCreateStoreInSection('قطعه فروش', false, 'mobile'), false);
+  assert.equal(canCreateStoreInSection('عمده\u200cفروش موبایل', false, 'mobile'), true);
+  assert.equal(canCreateStoreInSection('عمده\u200cفروش موبایل', false, 'acc'), false);
+  assert.equal(canCreateStoreInSection('عمده\u200cفروش جانبی', false, 'acc'), true);
+  assert.equal(canCreateStoreInSection('تعمیرکار', true, 'hw'), true);
 });
 
 test('email normalization and validation handle whitespace and case', () => {

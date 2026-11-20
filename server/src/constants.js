@@ -41,6 +41,15 @@ const STORE_CREATOR_ROLES = new Set([
   'قطعه‌فروش'
 ]);
 
+function normalizeRoleText(val) {
+  return String(val || '')
+    .replace(/\u200c/g, '')
+    .replace(/ي/g, 'ی')
+    .replace(/ك/g, 'ک')
+    .replace(/\s+/g, '')
+    .trim();
+}
+
 function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
 }
@@ -51,7 +60,35 @@ function isValidEmailFormat(email) {
 }
 
 function normalizeTier(tier) {
-  return ALL_ROLES.includes(tier) ? tier : 'تعمیرکار';
+  if (ALL_ROLES.includes(tier)) return tier;
+  const norm = normalizeRoleText(tier);
+  const found = ALL_ROLES.find((r) => normalizeRoleText(r) === norm);
+  return found || 'تعمیرکار';
+}
+
+function defaultStoreTypeForRole(tier) {
+  const canon = normalizeTier(tier);
+  if (canon === 'عمده\u200cفروش موبایل') return 'mobile';
+  if (canon === 'عمده\u200cفروش جانبی') return 'acc';
+  if (canon === 'قطعه‌فروش') return 'hw';
+  return 'both';
+}
+
+function canCreateStore(tier, isAdmin = false) {
+  if (isAdmin) return true;
+  const norm = normalizeRoleText(tier);
+  for (const r of STORE_CREATOR_ROLES) {
+    if (normalizeRoleText(r) === norm) return true;
+  }
+  return false;
+}
+
+function canCreateStoreInSection(tier, isAdmin, section) {
+  if (isAdmin) return true;
+  if (!canCreateStore(tier, false)) return false;
+  const canon = normalizeTier(tier);
+  const allowed = defaultStoreTypeForRole(canon);
+  return allowed === section;
 }
 
 function generateUid(prefix = '') {
@@ -70,8 +107,12 @@ module.exports = {
   GOOGLE_WEB_ALLOWED_ORIGINS,
   ALL_ROLES,
   STORE_CREATOR_ROLES,
+  normalizeRoleText,
   normalizeEmail,
   isValidEmailFormat,
   normalizeTier,
+  defaultStoreTypeForRole,
+  canCreateStore,
+  canCreateStoreInSection,
   generateUid
 };

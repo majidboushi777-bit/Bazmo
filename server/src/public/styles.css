@@ -608,13 +608,14 @@ button, input, select, textarea {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .header-brand {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-width: 0;
+  min-width: 120px;
   flex: 1 1 auto;
 }
 
@@ -1343,11 +1344,16 @@ button, input, select, textarea {
     padding: 12px 10px calc(22px + env(safe-area-inset-bottom));
   }
   .header-actions {
-    gap: 4px;
+    gap: 3px;
   }
   .icon-btn {
-    width: 32px;
-    height: 32px;
+    width: 30px;
+    height: 30px;
+    border-radius: 9px;
+  }
+  .icon-btn svg {
+    width: 16px;
+    height: 16px;
   }
   .glass-pill {
     padding: 6px 8px;

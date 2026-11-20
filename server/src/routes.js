@@ -20,6 +20,9 @@ const {
   normalizeEmail,
   isValidEmailFormat,
   normalizeTier,
+  defaultStoreTypeForRole,
+  canCreateStore,
+  canCreateStoreInSection,
   generateUid
 } = require('./constants');
 
@@ -92,6 +95,28 @@ function buildBannerId(section, slotIndex, loc) {
 
 function createApiRouter(broadcastSync = () => {}, sseClients = new Set(), getStateVersion = () => 1) {
   const router = express.Router();
+
+  async function createAdminAlertNotification({ title, body, type = 'درخواست تایید مدیر', sectionFilter = 'همه بخش‌ها' }) {
+    try {
+      const id = generateUid('nt_adm_');
+      const nowMs = Date.now();
+      await db.pool.query(
+        `INSERT INTO notifications (id, title, body, type, province, city, region, tier_filter, section_filter, date, read_by, published, is_demo, sort_order)
+         VALUES ($1,$2,$3,$4,'همه استان‌ها','همه شهرها','همه مناطق','ادمین',$5,'هم‌اکنون','[]'::jsonb,TRUE,FALSE,$6)`,
+        [
+          id,
+          String(title || '').slice(0, 180),
+          String(body || '').slice(0, 600),
+          String(type || 'درخواست تایید مدیر').slice(0, 80),
+          String(sectionFilter || 'همه بخش‌ها').slice(0, 80),
+          nowMs
+        ]
+      );
+      return id;
+    } catch {
+      return null;
+    }
+  }
 
   async function verifyStoreOwner(req, storeId, requireApproved = true) {
     if (req.isAdmin) return { ok: true, store: null };
@@ -245,7 +270,14 @@ function createApiRouter(broadcastSync = () => {}, sseClients = new Set(), getSt
         [id, email, fullName, phone, requestedTier, province, city, region, note, passwordHash]
       );
 
-      broadcastSync(['registration_requests']);
+      await createAdminAlertNotification({
+        title: `📝 درخواست عضویت جدید: ${fullName}`,
+        body: `نقش: ${requestedTier} | شهر: ${province}، ${city} (${region}) | تلفن: ${phone}`,
+        type: 'درخواست عضویت',
+        sectionFilter: 'users'
+      });
+
+      broadcastSync(['registration_requests', 'notifications']);
       return res.status(201).json({ ok: true, id });
     } catch (err) {
       return next(err);
@@ -328,11 +360,13 @@ function createApiRouter(broadcastSync = () => {}, sseClients = new Set(), getSt
           : Promise.resolve({ rows: [] }),
         notifications: isAdmin
           ? db.pool.query(`SELECT * FROM notifications ${demoWhere} ORDER BY sort_order DESC`)
-          : db.pool.query(`SELECT * FROM notifications WHERE published = TRUE ${demoClause} ORDER BY sort_order DESC`),
-        stores: isAdmin
-          ? db.pool.query(`SELECT * FROM stores ${demoWhere} ORDER BY id ASC`)
           : db.pool.query(
-              `SELECT * FROM stores WHERE ((published = TRUE AND status = 'approved') OR owner_id = $1) ${demoClause} ORDER BY id ASC`,
+              `SELECT * FROM notifications WHERE published = TRUE AND tier_filter <> 'ادمین' ${demoClause} ORDER BY sort_order DESC`
+            ),
+        stores: isAdmin
+          ? db.pool.query(`SELECT * FROM stores ${demoWhere} ORDER BY (status <> 'pending') ASC, created_at DESC, id ASC`)
+          : db.pool.query(
+              `SELECT * FROM stores WHERE ((published = TRUE AND status = 'approved') OR owner_id = $1) ${demoClause} ORDER BY (status <> 'pending') ASC, created_at DESC, id ASC`,
               [uid]
             ),
         mobiles: isAdmin
@@ -1180,37 +1214,65 @@ function createApiRouter(broadcastSync = () => {}, sseClients = new Set(), getSt
 
   router.post('/stores', async (req, res, next) => {
     try {
-      if (!req.isAdmin && !STORE_CREATOR_ROLES.has(req.userTier)) {
+      if (!canCreateStore(req.userTier, req.isAdmin)) {
         return res.status(403).json({
           error: 'فقط عمده‌فروش موبایل، عمده‌فروش جانبی و قطعه‌فروش امکان ثبت فروشگاه دارند.'
         });
       }
       const s = req.body || {};
+      const storeName = String(s.name || '').trim().slice(0, 140);
+      if (!storeName) {
+        return res.status(400).json({ error: 'نام فروشگاه الزامی است.' });
+      }
+      const requestedType = String(s.type || '').trim();
+      const roleSection = defaultStoreTypeForRole(req.userTier);
+      const storeType = req.isAdmin
+        ? (['mobile', 'acc', 'hw', 'both'].includes(requestedType) ? requestedType : 'both')
+        : roleSection;
+      if (!req.isAdmin && requestedType && requestedType !== 'both' && requestedType !== roleSection && !canCreateStoreInSection(req.userTier, false, requestedType)) {
+        return res.status(403).json({
+          error: 'هر نقش فقط در بخش تخصصی خودش امکان ثبت فروشگاه دارد.'
+        });
+      }
       const id = String(s.id || generateUid('st_'));
       const ownerId = req.isAdmin ? String(s.ownerId || req.auth.uid) : req.auth.uid;
       const status = req.isAdmin ? String(s.status || 'approved') : 'pending';
       const published = status === 'approved';
-      await db.pool.query(
+      const province = String(s.province || 'تهران').trim().slice(0, 80) || 'تهران';
+      const city = String(s.city || 'تهران').trim().slice(0, 80) || 'تهران';
+      const region = String(s.region || 'همه مناطق').trim().slice(0, 80) || 'همه مناطق';
+      const phone = String(s.phone || req.liveUser?.phone || '').trim().slice(0, 40);
+      const { rows } = await db.pool.query(
         `INSERT INTO stores (id, name, province, city, region, phone, address, hours, rating, type, owner_id, status, published, is_demo)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,FALSE)`,
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,FALSE)
+         RETURNING *`,
         [
           id,
-          String(s.name || '').trim().slice(0, 140),
-          String(s.province || 'تهران'),
-          String(s.city || 'تهران'),
-          String(s.region || 'همه مناطق'),
-          String(s.phone || ''),
-          String(s.address || ''),
-          String(s.hours || '۱۰ تا ۲۰'),
-          String(s.rating || '۵.۰'),
-          String(s.type || 'both'),
+          storeName,
+          province,
+          city,
+          region,
+          phone,
+          String(s.address || '').trim().slice(0, 300),
+          String(s.hours || '۱۰ تا ۲۰').trim().slice(0, 80),
+          String(s.rating || '۵.۰').trim().slice(0, 20),
+          storeType,
           ownerId,
           status,
           published
         ]
       );
-      broadcastSync(['stores']);
-      return res.status(201).json({ ok: true, id, status });
+      if (!req.isAdmin) {
+        const typeFa = storeType === 'mobile' ? 'موبایل' : storeType === 'acc' ? 'لوازم جانبی' : storeType === 'hw' ? 'قطعات سخت‌افزار' : 'موبایل و جانبی';
+        await createAdminAlertNotification({
+          title: `🏪 درخواست ثبت فروشگاه جدید: ${storeName}`,
+          body: `بخش: ${typeFa} | شهر: ${province}، ${city} (${region}) | تلفن: ${phone || '-'}`,
+          type: 'تایید فروشگاه',
+          sectionFilter: 'stores'
+        });
+      }
+      broadcastSync(['stores', 'notifications']);
+      return res.status(201).json({ ok: true, id, status, store: db.mapStore(rows[0]) });
     } catch (err) {
       return next(err);
     }
@@ -1513,7 +1575,7 @@ function createApiRouter(broadcastSync = () => {}, sseClients = new Set(), getSt
 
   router.post('/tutorials', async (req, res, next) => {
     try {
-      if (!req.isAdmin && req.userTier !== 'نرم\u200cافزارکار') {
+      if (!req.isAdmin && normalizeZwnj(req.userTier) !== normalizeZwnj('نرم‌افزارکار')) {
         return res.status(403).json({ error: 'ثبت آموزش فقط برای نقش نرم‌افزارکار مجاز است.' });
       }
       const t = req.body || {};
@@ -1535,7 +1597,15 @@ function createApiRouter(broadcastSync = () => {}, sseClients = new Set(), getSt
           req.auth.uid
         ]
       );
-      broadcastSync(['tutorials']);
+      if (!req.isAdmin) {
+        await createAdminAlertNotification({
+          title: `🎓 دوره آموزشی جدید در انتظار تایید: ${String(t.title || 'دوره جدید')}`,
+          body: `مدرس: ${String(t.teacher || req.liveUser?.fullName || '-')} | شهر: ${String(t.city || '-')}`,
+          type: 'تایید آموزش',
+          sectionFilter: 'tutorials'
+        });
+      }
+      broadcastSync(['tutorials', 'notifications']);
       return res.status(201).json({ ok: true, id });
     } catch (err) {
       return next(err);
@@ -1588,7 +1658,15 @@ function createApiRouter(broadcastSync = () => {}, sseClients = new Set(), getSt
           Number(r.sortOrder || Date.now())
         ]
       );
-      broadcastSync(['sw_requests']);
+      if (!req.isAdmin) {
+        await createAdminAlertNotification({
+          title: '📋 درخواست نرم‌افزاری جدید ثبت شد',
+          body: `${String(r.userName || req.liveUser?.fullName || 'کاربر')}: ${String(r.title || '').slice(0, 120)}`,
+          type: 'درخواست نرم‌افزاری',
+          sectionFilter: 'requests'
+        });
+      }
+      broadcastSync(['sw_requests', 'notifications']);
       return res.status(201).json({ ok: true, id });
     } catch (err) {
       return next(err);
@@ -1627,7 +1705,15 @@ function createApiRouter(broadcastSync = () => {}, sseClients = new Set(), getSt
           req.auth.uid
         ]
       );
-      broadcastSync(['boxes']);
+      if (!req.isAdmin) {
+        await createAdminAlertNotification({
+          title: `🧰 آگهی باکس جدید در انتظار تایید: ${String(b.name || 'باکس')}`,
+          body: `فروشنده: ${String(b.seller || req.liveUser?.fullName || '-')} | شهر: ${String(b.city || '-')}`,
+          type: 'تایید باکس',
+          sectionFilter: 'boxes'
+        });
+      }
+      broadcastSync(['boxes', 'notifications']);
       return res.status(201).json({ ok: true, id });
     } catch (err) {
       return next(err);
@@ -1693,7 +1779,17 @@ function createApiRouter(broadcastSync = () => {}, sseClients = new Set(), getSt
           Number(a.sortOrder || Date.now())
         ]
       );
-      broadcastSync(['hw_ads']);
+      if (!req.isAdmin) {
+        const sec = String(a.section || 'hw');
+        const secLabel = sec === 'mobile' ? 'موبایل' : sec === 'acc' ? 'لوازم جانبی' : 'سخت‌افزار';
+        await createAdminAlertNotification({
+          title: `📢 آگهی جدید در انتظار تایید (${secLabel}): ${String(a.title || 'آگهی')}`,
+          body: `فروشنده: ${String(a.seller || a.ownerName || req.liveUser?.fullName || '-')} | شهر: ${String(a.city || '-')}`,
+          type: 'تایید آگهی',
+          sectionFilter: sec
+        });
+      }
+      broadcastSync(['hw_ads', 'notifications']);
       return res.status(201).json({ ok: true, id });
     } catch (err) {
       return next(err);
@@ -1772,7 +1868,15 @@ function createApiRouter(broadcastSync = () => {}, sseClients = new Set(), getSt
           Number(r.sortOrder || Date.now())
         ]
       );
-      broadcastSync(['hw_requests']);
+      if (!req.isAdmin) {
+        await createAdminAlertNotification({
+          title: `🧩 درخواست قطعه تخصصی: ${String(r.brand || '')} ${String(r.model || '')}`.trim(),
+          body: `قطعه: ${String(r.partType || '-')} | شهر: ${String(r.city || '-')} | کاربر: ${String(r.userName || req.liveUser?.fullName || '-')}`,
+          type: 'درخواست قطعه',
+          sectionFilter: 'requests'
+        });
+      }
+      broadcastSync(['hw_requests', 'notifications']);
       return res.status(201).json({ ok: true, id });
     } catch (err) {
       return next(err);
@@ -1815,7 +1919,15 @@ function createApiRouter(broadcastSync = () => {}, sseClients = new Set(), getSt
           Number(o.sortOrder || Date.now())
         ]
       );
-      broadcastSync(['orders']);
+      if (!req.isAdmin) {
+        await createAdminAlertNotification({
+          title: `📦 سفارش جدید ثبت شد (${id})`,
+          body: `مشتری: ${String(o.customer?.firstName || '')} ${String(o.customer?.lastName || o.userName || '').trim()} | شهر: ${String(o.city || '-')}`,
+          type: 'سفارش جدید',
+          sectionFilter: 'orders'
+        });
+      }
+      broadcastSync(['orders', 'notifications']);
       return res.status(201).json({ ok: true, id });
     } catch (err) {
       return next(err);
@@ -2029,7 +2141,15 @@ function createApiRouter(broadcastSync = () => {}, sseClients = new Set(), getSt
           Number(d.sortOrder || Date.now())
         ]
       );
-      broadcastSync(['desk_rentals']);
+      if (!req.isAdmin) {
+        await createAdminAlertNotification({
+          title: `🪑 آگهی میز کار جدید در انتظار تایید: ${String(d.title || 'میز کار')}`,
+          body: `فروشگاه: ${String(d.storeName || '-')} | ${String(d.city || '-')} (${String(d.region || '-')})`,
+          type: 'تایید میز کار',
+          sectionFilter: 'desk_rentals'
+        });
+      }
+      broadcastSync(['desk_rentals', 'notifications']);
       return res.status(201).json({ ok: true, id, status });
     } catch (err) {
       return next(err);

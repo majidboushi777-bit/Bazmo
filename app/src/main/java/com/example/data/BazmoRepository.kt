@@ -73,6 +73,9 @@ internal data class NotificationsWrapper(val notifications: List<NotificationEnt
 @Keep
 internal data class BannerWrapper(val banner: BannerEntity? = null)
 
+@Keep
+internal data class StoreWrapper(val store: StoreEntity? = null)
+
 class BazmoRepository(
     private val baseUrl: String = BazmoServerConfig.baseUrl(),
     private val authToken: String,
@@ -95,7 +98,10 @@ class BazmoRepository(
                 .thenByDescending { it.createdAtSeconds }
         ),
         notifications = state.notifications.sortedByDescending { it.sortOrder },
-        stores = state.stores.sortedBy { it.id },
+        stores = state.stores.sortedWith(
+            compareBy<StoreEntity> { it.status != "pending" }
+                .thenBy { it.id }
+        ),
         mobiles = state.mobiles.sortedBy { it.sortOrder },
         storeMobiles = state.storeMobiles.sortedBy { it.price },
         accessories = state.accessories.sortedBy { it.id },
@@ -755,13 +761,33 @@ class BazmoRepository(
         useLongTimeout = true
     )
 
-    suspend fun createStore(store: StoreEntity): Result<Unit> =
-        executeJsonMutation(
-            method = "POST",
-            path = "/api/stores",
-            operationType = OperationType.CREATE,
-            bodyMap = store.toCreateMap() + ("id" to store.id)
-        )
+    suspend fun createStore(store: StoreEntity): Result<StoreEntity?> = withContext(Dispatchers.IO) {
+        try {
+            val payload = store.toCreateMap() + ("id" to store.id)
+            val request = Request.Builder()
+                .url("$normalizedBaseUrl/api/stores")
+                .header("Authorization", "Bearer $authToken")
+                .post(mapToJson(payload).toRequestBody(BazmoServerConfig.JSON_MEDIA_TYPE))
+                .build()
+            client.newCall(request).execute().use { res ->
+                val body = res.body?.string().orEmpty()
+                if (!res.isSuccessful) {
+                    return@withContext Result.failure(
+                        BazmoApiException(res.code, extractError(body, "خطا در ثبت فروشگاه (کد ${res.code})"))
+                    )
+                }
+                val created = runCatching {
+                    moshi.adapter(StoreWrapper::class.java).fromJson(body)?.store
+                }.getOrNull() ?: store
+                triggerRefresh(clearEtag = true)
+                Result.success(created)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleApiError(e, OperationType.CREATE, "/api/stores", currentUid)
+        }
+    }
 
     suspend fun updateStoreStatus(id: String, status: String): Result<Unit> =
         executeJsonMutation(

@@ -355,8 +355,8 @@ async function resolveLiveRole(req, res, next) {
       return res.status(403).json({ error: 'دسترسی به این بخش مجاز نیست یا حساب شما مسدود شده است.' });
     }
     req.isAdmin = isAdmin;
-    req.liveUser = liveUser;
-    req.userTier = isAdmin ? 'ادمین' : liveUser.tier;
+    req.liveUser = liveUser ? { ...liveUser, tier: normalizeTier(liveUser.tier) } : null;
+    req.userTier = isAdmin ? 'ادمین' : normalizeTier(liveUser.tier);
     return next();
   } catch (err) {
     return next(err);

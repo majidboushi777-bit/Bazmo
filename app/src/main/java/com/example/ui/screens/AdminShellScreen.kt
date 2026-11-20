@@ -3,6 +3,7 @@ package com.example.ui.screens
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -56,13 +57,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.R
 import com.example.data.BazmoLocations
 import com.example.data.BazmoRoles
 import com.example.data.RegistrationRequestEntity
@@ -179,32 +183,55 @@ fun AdminShellScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Column(
-                            horizontalAlignment = Alignment.Start,
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(9.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            Surface(
+                                shape = RoundedCornerShape(11.dp),
+                                color = Color.White.copy(alpha = 0.14f),
+                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.28f)),
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .testTag("admin_header_logo")
                             ) {
-                                Text(
-                                    text = "پنل ادمین بازمو",
-                                    color = Color.White,
-                                    fontSize = 18.sp,
-                                    fontWeight = FontWeight.Black,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                                Image(
+                                    painter = painterResource(id = R.drawable.ic_bazmo_foreground_1794874267318),
+                                    contentDescription = "لوگوی بازمو",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clip(RoundedCornerShape(11.dp))
                                 )
-                                BazmoBadge("مدیریت کل", BadgeTone.GOLD)
                             }
-                            Text(
-                                text = "کنترل کامل کاربران، نوتیفیکیشن و بخش‌ها",
-                                color = Color(0xFFCCE0FF),
-                                fontSize = 10.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.padding(top = 2.dp)
-                            )
+                            Column(
+                                horizontalAlignment = Alignment.Start,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Text(
+                                        text = "بازمو • ادمین",
+                                        color = Color.White,
+                                        fontSize = 17.sp,
+                                        fontWeight = FontWeight.Black,
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
+                                    BazmoBadge("مدیریت کل", BadgeTone.GOLD)
+                                }
+                                Text(
+                                    text = "کنترل کامل کاربران، فروشگاه‌ها و بخش‌ها",
+                                    color = Color(0xFFCCE0FF),
+                                    fontSize = 10.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.padding(top = 2.dp)
+                                )
+                            }
                         }
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -377,6 +404,12 @@ private data class DashboardKpiMeta(
 
 @Composable
 private fun AdminDashboardTab(state: BazmoUiState, viewModel: BazmoViewModel) {
+    val pendingHwAdsCount = remember(state.db.hwAds) {
+        state.db.hwAds.count { it.status == "pending" }
+    }
+    val pendingStoresCount = remember(state.db.stores) {
+        state.db.stores.count { it.status == "pending" }
+    }
     val pendingAdsCount = remember(
         state.db.hwAds,
         state.db.tutorials,
@@ -425,7 +458,10 @@ private fun AdminDashboardTab(state: BazmoUiState, viewModel: BazmoViewModel) {
                 emoji = "🛡️",
                 accentColor = GoldAccent,
                 tag = "dash_kpi_pending_ads",
-                onClick = { viewModel.navigateToAdminSection(AdminTab.ADS, adsSection = "hw") }
+                onClick = {
+                    val targetSec = if (pendingStoresCount > 0 && pendingHwAdsCount == 0) "stores" else "hw"
+                    viewModel.navigateToAdminSection(AdminTab.ADS, adsSection = targetSec)
+                }
             ),
             DashboardKpiMeta(
                 value = state.db.orders.size.toPersianNumber(),
@@ -595,7 +631,7 @@ private fun AdminDashboardTab(state: BazmoUiState, viewModel: BazmoViewModel) {
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         BazmoSoftButton(
-                            text = "🏪 فروشگاه‌ها",
+                            text = if (pendingStoresCount > 0) "🏪 فروشگاه‌ها (${pendingStoresCount.toPersianNumber()} منتظر)" else "🏪 فروشگاه‌ها",
                             onClick = { viewModel.navigateToAdminSection(AdminTab.ADS, adsSection = "stores") },
                             modifier = Modifier.weight(1f)
                         )

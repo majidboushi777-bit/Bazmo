@@ -157,7 +157,7 @@ internal fun AdminAdsStoresTab(state: BazmoUiState, viewModel: BazmoViewModel) {
                     ad.seller.contains(searchQuery, ignoreCase = true) ||
                     ad.city.contains(searchQuery, ignoreCase = true) ||
                     ad.model.contains(searchQuery, ignoreCase = true))
-        }
+        }.sortedBy { it.status != "pending" }
     }
 
     val filteredStores = remember(state.db.stores, searchQuery, onlyPending) {
@@ -168,7 +168,7 @@ internal fun AdminAdsStoresTab(state: BazmoUiState, viewModel: BazmoViewModel) {
                     s.city.contains(searchQuery, ignoreCase = true) ||
                     s.province.contains(searchQuery, ignoreCase = true) ||
                     s.phone.contains(searchQuery, ignoreCase = true))
-        }
+        }.sortedBy { it.status != "pending" }
     }
 
     val filteredDesks = remember(state.db.deskRentals, searchQuery, onlyPending) {
@@ -179,7 +179,7 @@ internal fun AdminAdsStoresTab(state: BazmoUiState, viewModel: BazmoViewModel) {
                     d.storeName.contains(searchQuery, ignoreCase = true) ||
                     d.ownerName.contains(searchQuery, ignoreCase = true) ||
                     d.city.contains(searchQuery, ignoreCase = true))
-        }
+        }.sortedBy { it.status != "pending" }
     }
 
     val filteredTuts = remember(state.db.tutorials, searchQuery, onlyPending) {
@@ -188,7 +188,7 @@ internal fun AdminAdsStoresTab(state: BazmoUiState, viewModel: BazmoViewModel) {
                 (searchQuery.isBlank() ||
                     t.title.contains(searchQuery, ignoreCase = true) ||
                     t.teacher.contains(searchQuery, ignoreCase = true))
-        }
+        }.sortedBy { it.status != "pending" }
     }
 
     val filteredBoxes = remember(state.db.boxes, searchQuery, onlyPending) {
@@ -198,7 +198,7 @@ internal fun AdminAdsStoresTab(state: BazmoUiState, viewModel: BazmoViewModel) {
                     b.name.contains(searchQuery, ignoreCase = true) ||
                     b.seller.contains(searchQuery, ignoreCase = true) ||
                     b.city.contains(searchQuery, ignoreCase = true))
-        }
+        }.sortedBy { it.status != "pending" }
     }
 
     val sliceLimit = 8

@@ -45,6 +45,9 @@ import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.LocationOn
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -188,6 +191,7 @@ fun UserShellScreen(
             maxWidth >= 600.dp -> 780.dp
             else -> 600.dp
         }
+        val isCompactHeader = maxWidth < 460.dp
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -207,21 +211,27 @@ fun UserShellScreen(
                         .padding(horizontal = 14.dp, vertical = 10.dp)
                 ) {
                     // Row 1: Brand Logo + Title on Start, Crisp Action Icons on End
+                    var headerMenuExpanded by remember { mutableStateOf(false) }
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.weight(1f)
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .widthIn(min = 128.dp)
                         ) {
                             Surface(
-                                shape = RoundedCornerShape(10.dp),
-                                color = Color.White.copy(alpha = 0.14f),
-                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
-                                modifier = Modifier.size(34.dp)
+                                shape = RoundedCornerShape(12.dp),
+                                color = Color.White.copy(alpha = 0.16f),
+                                border = BorderStroke(1.2.dp, Color.White.copy(alpha = 0.28f)),
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .testTag("header_brand_logo")
                             ) {
                                 Image(
                                     painter = painterResource(id = R.drawable.ic_bazmo_foreground_1794874267318),
@@ -229,22 +239,22 @@ fun UserShellScreen(
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .clip(RoundedCornerShape(10.dp))
+                                        .clip(RoundedCornerShape(12.dp))
                                 )
                             }
-                            Column {
+                            Column(modifier = Modifier.weight(1f, fill = false)) {
                                 Text(
                                     text = "بازمو",
                                     color = Color.White,
                                     fontSize = 19.sp,
                                     fontWeight = FontWeight.Black,
                                     maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                                    softWrap = false
                                 )
                                 Text(
                                     text = "صنف موبایل ایران",
                                     color = Color(0xFFCCE0FF),
-                                    fontSize = 10.sp,
+                                    fontSize = 10.5.sp,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -276,13 +286,15 @@ fun UserShellScreen(
                                 onClick = { viewModel.openModal(BazmoModal.Notifications) },
                                 tag = "notifications_button"
                             )
-                            HeaderActionButton(
-                                icon = Icons.Outlined.ReceiptLong,
-                                contentDescription = "سفارش‌ها",
-                                badgeCount = 0,
-                                onClick = { viewModel.openModal(BazmoModal.Orders) },
-                                tag = "orders_button"
-                            )
+                            if (!isCompactHeader) {
+                                HeaderActionButton(
+                                    icon = Icons.Outlined.ReceiptLong,
+                                    contentDescription = "سفارش‌ها",
+                                    badgeCount = 0,
+                                    onClick = { viewModel.openModal(BazmoModal.Orders) },
+                                    tag = "orders_button"
+                                )
+                            }
                             HeaderActionButton(
                                 icon = Icons.Outlined.ShoppingCart,
                                 contentDescription = "سبد خرید",
@@ -292,21 +304,82 @@ fun UserShellScreen(
                                 onClick = { viewModel.openModal(BazmoModal.Cart) },
                                 tag = "cart_button"
                             )
-                            HeaderActionButton(
-                                icon = if (isDark) Icons.Rounded.LightMode else Icons.Rounded.DarkMode,
-                                contentDescription = if (isDark) "حالت روشن" else "حالت تاریک",
-                                tint = GoldAccent,
-                                badgeCount = 0,
-                                onClick = { BazmoThemeManager.toggleDark(context, isDark) },
-                                tag = "theme_toggle_button"
-                            )
-                            HeaderActionButton(
-                                icon = Icons.AutoMirrored.Outlined.Logout,
-                                contentDescription = "خروج از حساب",
-                                badgeCount = 0,
-                                onClick = onSignOut,
-                                tag = "logout_button"
-                            )
+                            if (isCompactHeader) {
+                                Box {
+                                    HeaderActionButton(
+                                        icon = Icons.Rounded.MoreVert,
+                                        contentDescription = "منوی بیشتر",
+                                        badgeCount = 0,
+                                        onClick = { headerMenuExpanded = true },
+                                        tag = "header_more_button"
+                                    )
+                                    DropdownMenu(
+                                        expanded = headerMenuExpanded,
+                                        onDismissRequest = { headerMenuExpanded = false }
+                                    ) {
+                                        DropdownMenuItem(
+                                            text = { Text("سفارش‌ها") },
+                                            leadingIcon = {
+                                                Icon(
+                                                    imageVector = Icons.Outlined.ReceiptLong,
+                                                    contentDescription = null
+                                                )
+                                            },
+                                            onClick = {
+                                                headerMenuExpanded = false
+                                                viewModel.openModal(BazmoModal.Orders)
+                                            },
+                                            modifier = Modifier.testTag("orders_button")
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text(if (isDark) "حالت روشن" else "حالت تاریک") },
+                                            leadingIcon = {
+                                                Icon(
+                                                    imageVector = if (isDark) Icons.Rounded.LightMode else Icons.Rounded.DarkMode,
+                                                    contentDescription = null,
+                                                    tint = GoldAccent
+                                                )
+                                            },
+                                            onClick = {
+                                                headerMenuExpanded = false
+                                                BazmoThemeManager.toggleDark(context, isDark)
+                                            },
+                                            modifier = Modifier.testTag("theme_toggle_button")
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("خروج از حساب") },
+                                            leadingIcon = {
+                                                Icon(
+                                                    imageVector = Icons.AutoMirrored.Outlined.Logout,
+                                                    contentDescription = null,
+                                                    tint = DangerRed
+                                                )
+                                            },
+                                            onClick = {
+                                                headerMenuExpanded = false
+                                                onSignOut()
+                                            },
+                                            modifier = Modifier.testTag("logout_button")
+                                        )
+                                    }
+                                }
+                            } else {
+                                HeaderActionButton(
+                                    icon = if (isDark) Icons.Rounded.LightMode else Icons.Rounded.DarkMode,
+                                    contentDescription = if (isDark) "حالت روشن" else "حالت تاریک",
+                                    tint = GoldAccent,
+                                    badgeCount = 0,
+                                    onClick = { BazmoThemeManager.toggleDark(context, isDark) },
+                                    tag = "theme_toggle_button"
+                                )
+                                HeaderActionButton(
+                                    icon = Icons.AutoMirrored.Outlined.Logout,
+                                    contentDescription = "خروج از حساب",
+                                    badgeCount = 0,
+                                    onClick = onSignOut,
+                                    tag = "logout_button"
+                                )
+                            }
                         }
                     }
 
@@ -1507,32 +1580,58 @@ private fun ModalContent(
                 "hw" to "فروشگاه قطعات سخت‌افزار",
                 "both" to "موبایل و جانبی"
             )
+            val isAdminUser = state.session.isAdminUser
+            val roleForcedType = BazmoRoles.defaultStoreTypeForRole(state.currentTier)
+            val initialProv = if (
+                BazmoLocations.isAllScope(state.session.province) ||
+                BazmoLocations.citiesFor(state.session.province).isEmpty()
+            ) "تهران" else state.session.province
+            val validInitCities = BazmoLocations.citiesFor(initialProv)
+            val initialCity = if (
+                BazmoLocations.isAllScope(state.session.city) ||
+                !validInitCities.contains(state.session.city)
+            ) (validInitCities.firstOrNull() ?: "تهران") else state.session.city
+            val validInitRegions = BazmoLocations.regionsFor(initialProv, initialCity)
+            val initialRegion = if (
+                BazmoLocations.isAllScope(state.session.region) ||
+                !validInitRegions.contains(state.session.region)
+            ) (validInitRegions.firstOrNull() ?: "همه مناطق") else state.session.region
+
             var storeName by rememberSaveable { mutableStateOf("") }
             var storePhone by rememberSaveable { mutableStateOf(state.session.currentUser?.phone ?: "") }
             var storeAddress by rememberSaveable { mutableStateOf("") }
             var storeHours by rememberSaveable { mutableStateOf("۱۰ تا ۲۰") }
-            var storeType by rememberSaveable(modal.defaultType) { mutableStateOf(modal.defaultType) }
-            var prov by rememberSaveable { mutableStateOf(state.session.province) }
-            var city by rememberSaveable { mutableStateOf(state.session.city) }
-            var region by rememberSaveable { mutableStateOf(state.session.region) }
+            var storeType by rememberSaveable(modal.defaultType, isAdminUser, roleForcedType) {
+                mutableStateOf(if (isAdminUser) modal.defaultType else roleForcedType)
+            }
+            var prov by rememberSaveable { mutableStateOf(initialProv) }
+            var city by rememberSaveable { mutableStateOf(initialCity) }
+            var region by rememberSaveable { mutableStateOf(initialRegion) }
             val provs = BazmoLocations.provinces()
             val cities = BazmoLocations.citiesFor(prov)
             val regions = BazmoLocations.regionsFor(prov, city)
+            val effectiveType = if (isAdminUser) storeType else roleForcedType
 
             ModalHeader("🏪 ثبت فروشگاه جدید", { viewModel.closeModal() })
-            BazmoBadge("دسترسی مجاز: ${state.currentTier}", BadgeTone.GREEN, modifier = Modifier.padding(bottom = 10.dp))
+            BazmoBadge(
+                text = "بخش تخصصی: ${BazmoRoles.storeTypeLabel(effectiveType)} (${BazmoRoles.normalizeTier(state.currentTier)})",
+                tone = BadgeTone.GREEN,
+                modifier = Modifier.padding(bottom = 10.dp)
+            )
             BazmoInput(storeName, { storeName = it }, "نام فروشگاه", modifier = Modifier.padding(bottom = 8.dp))
             BazmoInput(storePhone, { storePhone = it }, "تلفن تماس فروشگاه", keyboardType = KeyboardType.Phone, modifier = Modifier.padding(bottom = 8.dp))
             BazmoInput(storeAddress, { storeAddress = it }, "آدرس دقیق فروشگاه", modifier = Modifier.padding(bottom = 8.dp))
             BazmoInput(storeHours, { storeHours = it }, "ساعت کاری (مثلاً ۱۰ تا ۲۰)", modifier = Modifier.padding(bottom = 8.dp))
-            val curTypeLabel = typeOptions.find { it.first == storeType }?.second ?: typeOptions.first().second
-            BazmoDropdownSelector(
-                label = "حوزه فعالیت فروشگاه:",
-                selectedValue = curTypeLabel,
-                options = typeOptions.map { it.second },
-                onSelect = { chosen -> storeType = typeOptions.find { it.second == chosen }?.first ?: modal.defaultType },
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
+            if (isAdminUser) {
+                val curTypeLabel = typeOptions.find { it.first == storeType }?.second ?: typeOptions.first().second
+                BazmoDropdownSelector(
+                    label = "حوزه فعالیت فروشگاه:",
+                    selectedValue = curTypeLabel,
+                    options = typeOptions.map { it.second },
+                    onSelect = { chosen -> storeType = typeOptions.find { it.second == chosen }?.first ?: modal.defaultType },
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
                 BazmoDropdownSelector(
                     label = "استان:",
@@ -1565,8 +1664,8 @@ private fun ModalContent(
                 modifier = Modifier.padding(bottom = 12.dp)
             )
             BazmoPrimaryButton(
-                text = "✓ ثبت فروشگاه",
-                onClick = { viewModel.submitNewStore(storeName, prov, city, region, storePhone, storeAddress, storeHours, storeType) },
+                text = "✓ ارسال درخواست ثبت فروشگاه",
+                onClick = { viewModel.submitNewStore(storeName, prov, city, region, storePhone, storeAddress, storeHours, effectiveType) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("submit_store_button")

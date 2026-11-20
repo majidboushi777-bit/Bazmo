@@ -512,7 +512,7 @@ fun HardwareTabScreen(
                                             .testTag("hw_forum_button")
                                     )
                                 }
-                                if (state.canCreateStore) {
+                                if (state.canCreateStoreInSection("hw")) {
                                     BazmoGoldButton(
                                         text = "🏪 ثبت فروشگاه قطعات",
                                         onClick = { viewModel.openModal(BazmoModal.RegisterStore("hw")) },

@@ -271,9 +271,29 @@
     return 'موبایل و جانبی';
   }
 
+  function defaultStoreTypeForRole(tier) {
+    const norm = normalizeZwnj(tier);
+    if (norm === normalizeZwnj('عمده‌فروش موبایل')) return 'mobile';
+    if (norm === normalizeZwnj('عمده‌فروش جانبی')) return 'acc';
+    if (norm === normalizeZwnj('قطعه‌فروش')) return 'hw';
+    return 'both';
+  }
+
   function canCreateStore() {
     if (!state.session) return false;
-    return state.session.isAdmin || STORE_CREATOR_ROLES.has(getUserTier());
+    if (state.session.isAdmin) return true;
+    const norm = normalizeZwnj(getUserTier());
+    for (const r of STORE_CREATOR_ROLES) {
+      if (normalizeZwnj(r) === norm) return true;
+    }
+    return false;
+  }
+
+  function canCreateStoreInSection(section) {
+    if (!state.session) return false;
+    if (state.session.isAdmin) return true;
+    if (!canCreateStore()) return false;
+    return defaultStoreTypeForRole(getUserTier()) === section;
   }
 
   function canAccessSoftwareBoard() {
@@ -1497,7 +1517,7 @@
             <option value="85000000" ${state.mobileBudgetMax === 85000000 ? 'selected' : ''}>تا ۸۵ میلیون تومان</option>
           </select>
           <button id="mob-post-ad-btn" class="btn btn-gold btn-sm">+ ثبت آگهی</button>
-          ${canCreateStore() ? `<button id="mob-add-store-btn" class="btn btn-navy btn-sm">+ ثبت فروشگاه</button>` : ''}
+          ${canCreateStoreInSection('mobile') ? `<button id="mob-add-store-btn" class="btn btn-navy btn-sm">+ ثبت فروشگاه</button>` : ''}
         </div>
       </div>
 
@@ -1875,7 +1895,7 @@
         <input id="acc-search" class="input toolbar-search" placeholder="جستجوی لوازم جانبی (گارد، گلس، شارژر)..." value="${esc(state.accSearch)}" />
         <div class="row">
           <button id="acc-post-ad-btn" class="btn btn-gold btn-sm">+ ثبت آگهی</button>
-          ${canCreateStore() ? `<button id="acc-add-store-btn" class="btn btn-navy btn-sm">+ ثبت فروشگاه</button>` : ''}
+          ${canCreateStoreInSection('acc') ? `<button id="acc-add-store-btn" class="btn btn-navy btn-sm">+ ثبت فروشگاه</button>` : ''}
         </div>
       </div>
 
@@ -2040,7 +2060,7 @@
           <input id="hw-search" class="input toolbar-search" placeholder="جستجوی قطعه، آی‌سی، فلت یا مدل گوشی..." value="${esc(state.hwSearch)}" />
           <div class="row">
             <button id="hw-new-ad-btn" class="btn btn-primary btn-sm">+ ثبت آگهی قطعه</button>
-            ${canCreateStore() ? `<button id="hw-add-store-btn" class="btn btn-navy btn-sm">+ ثبت فروشگاه</button>` : ''}
+            ${canCreateStoreInSection('hw') ? `<button id="hw-add-store-btn" class="btn btn-navy btn-sm">+ ثبت فروشگاه قطعات</button>` : ''}
           </div>
         </div>
 
@@ -3460,10 +3480,18 @@
     };
   }
 
-  function openRegisterStoreModal() {
-    const defaultType = getUserTier() === 'عمده‌فروش موبایل' ? 'mobile'
-      : getUserTier() === 'عمده‌فروش جانبی' ? 'acc'
-      : getUserTier() === 'قطعه‌فروش' ? 'hw' : 'both';
+  function openRegisterStoreModal(requestedSection = null) {
+    const isAdminUser = Boolean(state.session?.isAdmin);
+    const roleSection = defaultStoreTypeForRole(getUserTier());
+    if (!canCreateStore()) {
+      return toast('ثبت فروشگاه فقط برای عمده‌فروش موبایل، عمده‌فروش جانبی و قطعه‌فروش مجاز است.');
+    }
+    if (!isAdminUser && requestedSection && requestedSection !== roleSection) {
+      return toast('هر نقش فقط در بخش تخصصی خودش امکان ثبت فروشگاه دارد.');
+    }
+    const defaultType = isAdminUser
+      ? (['mobile', 'acc', 'hw', 'both'].includes(requestedSection) ? requestedSection : 'both')
+      : roleSection;
     const form = {
       prov: isAllScope(state.province) ? 'تهران' : state.province,
       city: isAllScope(state.city) ? 'تهران' : state.city,
@@ -3491,21 +3519,24 @@
       if (!regions.includes(form.reg)) form.reg = regions[0] || 'همه مناطق';
       showModal(`
         <h3 style="margin-top:0;">🏪 ثبت فروشگاه جدید در بازمو</h3>
+        <div class="badge badge-green" style="margin-bottom:10px;">دسترسی بخش: ${esc(storeTypeLabel(form.type))} (${esc(getUserTier())})</div>
         <div class="grid" style="grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px;">
           <select id="st-prov" class="select">${Object.keys(LOCATIONS).map((p) => `<option value="${esc(p)}" ${p === form.prov ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select>
           <select id="st-city" class="select">${cities.map((c) => `<option value="${esc(c)}" ${c === form.city ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
           <select id="st-reg" class="select">${regions.map((r) => `<option value="${esc(r)}" ${r === form.reg ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select>
         </div>
         <div class="form-group"><input id="st-name" class="input" placeholder="نام فروشگاه / بنکداری" value="${esc(form.name)}" /></div>
-        <div class="form-group">
-          <label class="form-label">حوزه فعالیت فروشگاه</label>
-          <select id="st-type" class="select">
-            <option value="mobile" ${form.type === 'mobile' ? 'selected' : ''}>فروشگاه موبایل</option>
-            <option value="acc" ${form.type === 'acc' ? 'selected' : ''}>فروشگاه لوازم جانبی</option>
-            <option value="hw" ${form.type === 'hw' ? 'selected' : ''}>فروشگاه قطعات سخت‌افزار</option>
-            <option value="both" ${form.type === 'both' ? 'selected' : ''}>موبایل و جانبی</option>
-          </select>
-        </div>
+        ${isAdminUser ? `
+          <div class="form-group">
+            <label class="form-label">حوزه فعالیت فروشگاه</label>
+            <select id="st-type" class="select">
+              <option value="mobile" ${form.type === 'mobile' ? 'selected' : ''}>فروشگاه موبایل</option>
+              <option value="acc" ${form.type === 'acc' ? 'selected' : ''}>فروشگاه لوازم جانبی</option>
+              <option value="hw" ${form.type === 'hw' ? 'selected' : ''}>فروشگاه قطعات سخت‌افزار</option>
+              <option value="both" ${form.type === 'both' ? 'selected' : ''}>موبایل و جانبی</option>
+            </select>
+          </div>
+        ` : `<input type="hidden" id="st-type" value="${esc(form.type)}" />`}
         <div class="form-group"><input id="st-phone" class="input" dir="ltr" placeholder="تلفن تماس" value="${esc(form.phone)}" /></div>
         <div class="form-group"><input id="st-addr" class="input" placeholder="آدرس دقیق پاساژ / واحد" value="${esc(form.addr)}" /></div>
         <div class="form-group"><input id="st-hours" class="input" placeholder="ساعات کاری (مثلاً ۱۰ تا ۲۰)" value="${esc(form.hours)}" /></div>
@@ -3520,7 +3551,7 @@
         const name = document.getElementById('st-name').value.trim();
         if (!name) return toast('نام فروشگاه الزامی است.');
         try {
-          await api('/api/stores', {
+          const res = await api('/api/stores', {
             method: 'POST',
             body: {
               name,
@@ -3533,8 +3564,11 @@
               hours: document.getElementById('st-hours').value.trim()
             }
           });
+          if (res?.store && state.db) {
+            state.db.stores = [res.store, ...(state.db.stores || []).filter((x) => x.id !== res.store.id)];
+          }
           closeModal();
-          toast(state.session.isAdmin ? 'فروشگاه ثبت و فعال شد.' : 'فروشگاه ثبت شد و پس از تایید مدیر در پنل «مدیریت فروشگاه من» قابل مدیریت کامل است.');
+          toast(state.session.isAdmin ? 'فروشگاه ثبت و فعال شد.' : 'فروشگاه ثبت شد و جهت تایید به مدیریت ارسال گردید.');
           await loadAppState(true);
         } catch (err) {
           toast(err.message);
@@ -4839,9 +4873,9 @@
     const msBack = document.getElementById('mystore-back-btn');
     if (msBack) msBack.onclick = () => { state.showMyStore = false; render(); };
     const msCreate = document.getElementById('mystore-create-btn');
-    if (msCreate) msCreate.onclick = openRegisterStoreModal;
+    if (msCreate) msCreate.onclick = () => openRegisterStoreModal();
     const msEmptyCreate = document.getElementById('mystore-empty-create');
-    if (msEmptyCreate) msEmptyCreate.onclick = openRegisterStoreModal;
+    if (msEmptyCreate) msEmptyCreate.onclick = () => openRegisterStoreModal();
     document.querySelectorAll('[data-sel-mystore]').forEach((b) => {
       b.onclick = () => { state.myStoreId = b.dataset.selMystore; render(); };
     });
@@ -4964,7 +4998,7 @@
     const mobPostAd = document.getElementById('mob-post-ad-btn');
     if (mobPostAd) mobPostAd.onclick = () => openNewAdModal('mobile');
     const mobAddStore = document.getElementById('mob-add-store-btn');
-    if (mobAddStore) mobAddStore.onclick = openRegisterStoreModal;
+    if (mobAddStore) mobAddStore.onclick = () => openRegisterStoreModal('mobile');
 
     document.querySelectorAll('[data-buy-offer]').forEach((b) => {
       b.onclick = () => {
@@ -5036,7 +5070,7 @@
     const accPostAd = document.getElementById('acc-post-ad-btn');
     if (accPostAd) accPostAd.onclick = () => openNewAdModal('acc');
     const accAddStore = document.getElementById('acc-add-store-btn');
-    if (accAddStore) accAddStore.onclick = openRegisterStoreModal;
+    if (accAddStore) accAddStore.onclick = () => openRegisterStoreModal('acc');
 
     document.querySelectorAll('[data-buy-acc]').forEach((b) => {
       b.onclick = () => {
@@ -5077,7 +5111,7 @@
     const hwNewAd = document.getElementById('hw-new-ad-btn');
     if (hwNewAd) hwNewAd.onclick = () => openNewAdModal('hw');
     const hwAddStore = document.getElementById('hw-add-store-btn');
-    if (hwAddStore) hwAddStore.onclick = openRegisterStoreModal;
+    if (hwAddStore) hwAddStore.onclick = () => openRegisterStoreModal('hw');
 
     document.querySelectorAll('[data-buy-hw]').forEach((b) => {
       b.onclick = () => {
@@ -5756,7 +5790,7 @@
       b.onclick = async () => { await api(`/api/boxes/${b.dataset.appBox}/approve`, { method: 'POST' }); await loadAppState(true); };
     });
     const adminAddStore = document.getElementById('admin-add-store-btn');
-    if (adminAddStore) adminAddStore.onclick = openRegisterStoreModal;
+    if (adminAddStore) adminAddStore.onclick = () => openRegisterStoreModal();
     document.querySelectorAll('[data-del-store]').forEach((b) => {
       b.onclick = async () => { await api(`/api/stores/${b.dataset.delStore}`, { method: 'DELETE' }); await loadAppState(true); };
     });

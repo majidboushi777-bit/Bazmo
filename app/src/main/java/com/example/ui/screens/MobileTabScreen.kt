@@ -474,7 +474,7 @@ fun MobileTabScreen(
                                             .weight(1f)
                                             .testTag("mobile_new_ad_button")
                                     )
-                                    if (state.canCreateStore) {
+                                    if (state.canCreateStoreInSection("mobile")) {
                                         BazmoGoldButton(
                                             text = "🏪 ثبت فروشگاه",
                                             onClick = { viewModel.openModal(BazmoModal.RegisterStore("mobile")) },

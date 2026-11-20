@@ -16,6 +16,7 @@ import com.example.data.BazmoRepository
 import com.example.data.BazmoRoles
 import com.example.data.BazmoServerConfig
 import com.example.data.BazmoSessionUser
+import com.example.data.BazmoSyncBus
 import com.example.data.BoxEntity
 import com.example.data.ChatMessage
 import com.example.data.ChatThreadEntity
@@ -199,6 +200,9 @@ data class BazmoUiState(
 
     val canCreateStore: Boolean
         get() = BazmoRoles.canCreateStore(currentTier, session.isAdminUser)
+
+    fun canCreateStoreInSection(section: String): Boolean =
+        BazmoRoles.canCreateStoreInSection(currentTier, session.isAdminUser, section)
 
     val canAccessHardwareForum: Boolean
         get() = BazmoRoles.canAccessHardwareForum(currentTier, session.isAdminUser)
@@ -757,6 +761,10 @@ class BazmoViewModel(
                     showToast("ثبت فروشگاه فقط برای عمده\u200cفروش موبایل، عمده\u200cفروش جانبی و قطعه\u200cفروش مجاز است")
                     return
                 }
+                if (!sessionState.value.isAdminUser && modal.defaultType != "both" && !uiState.value.canCreateStoreInSection(modal.defaultType)) {
+                    showToast("هر نقش فقط در بخش تخصصی خودش امکان ثبت فروشگاه دارد")
+                    return
+                }
             }
             BazmoModal.SellTutorial -> {
                 if (!uiState.value.canAccessSoftwareSpecialized) {
@@ -1098,18 +1106,34 @@ class BazmoViewModel(
             showToast("نام فروشگاه را وارد کنید")
             return
         }
-        val safeType = if (type in listOf("mobile", "acc", "hw", "both")) type
-        else BazmoRoles.defaultStoreTypeForRole(uiState.value.currentTier)
-
         val isAdmin = sessionState.value.isAdminUser
+        val roleSection = BazmoRoles.defaultStoreTypeForRole(uiState.value.currentTier)
+        val safeType = if (isAdmin) {
+            if (type in listOf("mobile", "acc", "hw", "both")) type else "both"
+        } else {
+            roleSection
+        }
+
+        val fallbackProv = if (BazmoLocations.isAllScope(sessionState.value.province)) "تهران" else sessionState.value.province
+        val cleanProv = province.trim().let { if (it.isEmpty() || BazmoLocations.isAllScope(it)) fallbackProv else it }.take(80)
+        val validCities = BazmoLocations.citiesFor(cleanProv)
+        val fallbackCity = validCities.firstOrNull() ?: "تهران"
+        val cleanCity = city.trim().let {
+            if (it.isEmpty() || BazmoLocations.isAllScope(it) || (validCities.isNotEmpty() && it !in validCities)) fallbackCity else it
+        }.take(80)
+        val validRegions = BazmoLocations.regionsFor(cleanProv, cleanCity)
+        val cleanRegion = region.trim().let {
+            if (it.isEmpty() || (validRegions.isNotEmpty() && it !in validRegions)) validRegions.firstOrNull() ?: "همه مناطق" else it
+        }.take(80)
+
         val st = StoreEntity(
             id = generateUid("st_"),
             name = cleanName,
-            province = province.trim().ifEmpty { sessionState.value.province }.take(80),
-            city = city.trim().ifEmpty { sessionState.value.city }.take(80),
-            region = region.trim().ifEmpty { sessionState.value.region }.take(80),
+            province = cleanProv,
+            city = cleanCity,
+            region = cleanRegion,
             phone = phone.trim().ifEmpty { sessionState.value.currentUser?.phone.orEmpty() }.take(40),
-            address = address.trim().ifEmpty { "${city.ifBlank { sessionState.value.city }}، $region" }.take(300),
+            address = address.trim().ifEmpty { "$cleanCity، $cleanRegion" }.take(300),
             hours = hours.trim().ifEmpty { "۱۰ تا ۲۰" }.take(80),
             rating = "۵.۰",
             type = safeType,
@@ -1119,12 +1143,17 @@ class BazmoViewModel(
         )
         viewModelScope.launch {
             repository.createStore(st)
-                .onSuccess {
+                .onSuccess { createdStore ->
+                    val mergedStore = createdStore ?: st
+                    dbState.update { cur ->
+                        cur.copy(stores = listOf(mergedStore) + cur.stores.filterNot { it.id == mergedStore.id })
+                    }
                     closeModal()
                     showToast(
                         if (isAdmin) "فروشگاه شما با موفقیت ثبت و فعال شد!"
-                        else "فروشگاه شما ثبت شد و پس از تایید مدیریت فعال می‌شود."
+                        else "فروشگاه شما ثبت شد و جهت تایید به مدیریت ارسال گردید."
                     )
+                    BazmoSyncBus.notifySync()
                 }
                 .onFailure { err -> showToast(err.message ?: "خطا در ثبت فروشگاه") }
         }

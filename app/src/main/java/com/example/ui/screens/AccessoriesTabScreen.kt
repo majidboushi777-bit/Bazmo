@@ -148,7 +148,7 @@ fun AccessoriesTabScreen(
                             .weight(1f)
                             .testTag("acc_new_ad_button")
                     )
-                    if (state.canCreateStore) {
+                    if (state.canCreateStoreInSection("acc")) {
                         BazmoGoldButton(
                             text = "🏪 ثبت فروشگاه",
                             onClick = { viewModel.openModal(BazmoModal.RegisterStore("acc")) },
