@@ -1,5 +1,6 @@
 package com.example.data
 
+import android.content.Context
 import androidx.annotation.Keep
 import com.squareup.moshi.Types
 import kotlinx.coroutines.CancellationException
@@ -19,6 +20,7 @@ import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.json.JSONObject
+import java.io.File
 import java.net.URLEncoder
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -50,7 +52,8 @@ data class BazmoDbState(
     val chatThreads: List<ChatThreadEntity> = emptyList(),
     val forumPosts: List<ForumPostEntity> = emptyList(),
     val deskRentals: List<DeskRentalEntity> = emptyList(),
-    val deskRequests: List<DeskRequestEntity> = emptyList()
+    val deskRequests: List<DeskRequestEntity> = emptyList(),
+    val banners: List<BannerEntity> = emptyList()
 )
 
 private sealed interface FetchStateOutcome {
@@ -59,13 +62,13 @@ private sealed interface FetchStateOutcome {
 }
 
 @Keep
-private data class AdminUsersWrapper(val users: List<UserEntity> = emptyList())
+internal data class AdminUsersWrapper(val users: List<UserEntity> = emptyList())
 
 @Keep
-private data class UserWrapper(val user: UserEntity? = null)
+internal data class UserWrapper(val user: UserEntity? = null)
 
 @Keep
-private data class NotificationsWrapper(val notifications: List<NotificationEntity> = emptyList())
+internal data class NotificationsWrapper(val notifications: List<NotificationEntity> = emptyList())
 
 class BazmoRepository(
     private val baseUrl: String = BazmoServerConfig.baseUrl(),
@@ -104,8 +107,28 @@ class BazmoRepository(
         orders = state.orders.sortedByDescending { it.sortOrder },
         forumPosts = state.forumPosts.sortedByDescending { it.createdAtMs },
         deskRentals = state.deskRentals.sortedByDescending { it.sortOrder },
-        deskRequests = state.deskRequests.sortedByDescending { it.sortOrder }
+        deskRequests = state.deskRequests.sortedByDescending { it.sortOrder },
+        banners = state.banners.sortedWith(compareBy<BannerEntity> { it.section }.thenBy { it.slotIndex })
     )
+
+    suspend fun loadCachedDbState(context: Context): BazmoDbState? = withContext(Dispatchers.IO) {
+        runCatching {
+            val safeUid = currentUid.replace(Regex("[^a-zA-Z0-9._-]"), "_").ifBlank { "default" }
+            val file = File(context.applicationContext.filesDir, "bazmo_cache_$safeUid.json")
+            if (!file.exists() || file.length() <= 0L) return@withContext null
+            val raw = file.readText(Charsets.UTF_8)
+            moshi.adapter(BazmoDbState::class.java).fromJson(raw)?.let(::normalizeDbState)
+        }.getOrNull()
+    }
+
+    suspend fun saveCachedDbState(context: Context, state: BazmoDbState) = withContext(Dispatchers.IO) {
+        runCatching {
+            val safeUid = currentUid.replace(Regex("[^a-zA-Z0-9._-]"), "_").ifBlank { "default" }
+            val file = File(context.applicationContext.filesDir, "bazmo_cache_$safeUid.json")
+            val json = moshi.adapter(BazmoDbState::class.java).toJson(state)
+            file.writeText(json, Charsets.UTF_8)
+        }
+    }
 
     fun triggerRefresh(wakeSocket: Boolean = false, clearEtag: Boolean = false) {
         if (clearEtag) lastStateEtag = null
@@ -374,6 +397,7 @@ class BazmoRepository(
     }
 
     suspend fun checkIsAdminDoc(uid: String): Boolean {
+        BazmoAuthManager.peekCachedAuthResponse(uid, authToken)?.let { return it.isAdmin }
         val sessionRes = BazmoAuthManager.verifySession(authToken)
         return sessionRes.getOrNull()?.isAdmin ?: false
     }
@@ -384,7 +408,8 @@ class BazmoRepository(
         displayName: String?,
         isAdmin: Boolean
     ): Result<EnsureProfileResult> {
-        val sessionRes = BazmoAuthManager.verifySession(authToken)
+        val cached = BazmoAuthManager.peekCachedAuthResponse(uid, authToken)
+        val sessionRes = if (cached != null) Result.success(cached) else BazmoAuthManager.verifySession(authToken)
         return sessionRes.fold(
             onSuccess = { resp ->
                 when (resp.status) {
@@ -428,20 +453,14 @@ class BazmoRepository(
     suspend fun updateOwnProfile(
         uid: String,
         fullName: String,
-        phone: String,
-        province: String,
-        city: String,
-        region: String
+        phone: String
     ): Result<Unit> = executeJsonMutation(
         method = "PATCH",
         path = "/api/users/me",
         operationType = OperationType.UPDATE,
         bodyMap = mapOf(
             "fullName" to fullName,
-            "phone" to phone,
-            "province" to province,
-            "city" to city,
-            "region" to region
+            "phone" to phone
         )
     )
 
@@ -573,6 +592,65 @@ class BazmoRepository(
             )
         )
     }
+
+    suspend fun updateUserLocationByAdmin(
+        userId: String,
+        email: String,
+        province: String,
+        city: String,
+        region: String,
+        fullName: String? = null,
+        phone: String? = null
+    ): Result<Unit> {
+        val encodedId = urlEncode(userId)
+        val body = buildMap<String, Any?> {
+            put("email", normalizeEmail(email))
+            put("province", province.trim().ifBlank { "تهران" }.take(80))
+            put("city", city.trim().ifBlank { "تهران" }.take(80))
+            put("region", region.trim().ifBlank { "همه مناطق" }.take(80))
+            if (fullName != null) put("fullName", fullName.trim().take(120))
+            if (phone != null) put("phone", phone.trim().take(40))
+        }
+        return executeJsonMutation(
+            method = "PATCH",
+            path = "/api/admin/users/$encodedId/location",
+            operationType = OperationType.UPDATE,
+            bodyMap = body
+        ).also { if (it.isSuccess) fetchUsersForAdmin() }
+    }
+
+    suspend fun upsertBannerByAdmin(
+        section: String,
+        slotIndex: Int,
+        title: String,
+        linkType: String,
+        linkTarget: String,
+        imageMime: String,
+        imageData: String,
+        keepExistingImage: Boolean
+    ): Result<Unit> = executeJsonMutation(
+        method = "POST",
+        path = "/api/admin/banners",
+        operationType = OperationType.WRITE,
+        bodyMap = mapOf(
+            "section" to section,
+            "slotIndex" to slotIndex,
+            "title" to title.trim().take(120),
+            "linkType" to linkType,
+            "linkTarget" to linkTarget.trim().take(500),
+            "imageMime" to imageMime,
+            "imageData" to imageData,
+            "keepExistingImage" to keepExistingImage
+        )
+    )
+
+    suspend fun deleteBannerByAdmin(id: String): Result<Unit> =
+        executeJsonMutation(
+            method = "DELETE",
+            path = "/api/admin/banners/${urlEncode(id)}",
+            operationType = OperationType.DELETE,
+            bodyMap = null
+        )
 
     suspend fun approveRegistrationRequest(
         req: RegistrationRequestEntity,

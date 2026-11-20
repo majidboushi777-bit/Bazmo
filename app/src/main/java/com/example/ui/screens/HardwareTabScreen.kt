@@ -20,12 +20,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -34,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -54,6 +57,7 @@ import com.example.ui.components.BazmoEmptyState
 import com.example.ui.components.BazmoGoldButton
 import com.example.ui.components.BazmoInput
 import com.example.ui.components.BazmoPrimaryButton
+import com.example.ui.components.BazmoPromoBannerGrid
 import com.example.ui.components.BazmoSearchBar
 import com.example.ui.components.BazmoSectionHeader
 import com.example.ui.components.BazmoSoftButton
@@ -77,6 +81,8 @@ fun HardwareTabScreen(
 ) {
     val hv = state.session.hwView
     val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
+    val hwBanners = remember(state.db.banners) { state.bannersForSection("hw") }
 
     BackHandler(enabled = hv.mode != HardwareSubMode.HOME && hv.mode != HardwareSubMode.FORUM) {
         viewModel.setHwMode(HardwareSubMode.HOME)
@@ -112,7 +118,9 @@ fun HardwareTabScreen(
                         state.db.hwAds.find { it.id == hv.adId }
                     }
                     if (ad == null) {
-                        viewModel.setHwMode(HardwareSubMode.HOME)
+                        LaunchedEffect(hv.adId) {
+                            viewModel.setHwMode(HardwareSubMode.HOME)
+                        }
                         return@AnimatedContent
                     }
                     LazyColumn(
@@ -184,7 +192,8 @@ fun HardwareTabScreen(
                                     text = "📞 تماس تلفنی با ${ad.phone}",
                                     onClick = {
                                         val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:${ad.phone}"))
-                                        context.startActivity(intent)
+                                        runCatching { context.startActivity(intent) }
+                                            .onFailure { viewModel.showToast("برنامه تماس روی این دستگاه یافت نشد") }
                                     },
                                     modifier = Modifier.fillMaxWidth()
                                 )
@@ -246,7 +255,7 @@ fun HardwareTabScreen(
                         if (mine.isEmpty()) {
                             item(key = "hw_myads_empty") { BazmoEmptyState("شما هنوز آگهی ثبت نکرده‌اید.") }
                         } else {
-                            items(mineRows, key = { row -> "hw_mine_row_" + row.joinToString("_") { it.id } }) { rowItems ->
+                            itemsIndexed(mineRows, key = { idx, row -> "hw_mine_row_${idx}_" + row.joinToString("_") { it.id } }) { _, rowItems ->
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -383,7 +392,7 @@ fun HardwareTabScreen(
                         if (myReqs.isEmpty()) {
                             item(key = "hw_req_empty") { BazmoEmptyState("درخواستی ثبت نشده است.") }
                         } else {
-                            items(reqRows, key = { row -> "hw_req_row_" + row.joinToString("_") { it.id } }) { rowItems ->
+                            itemsIndexed(reqRows, key = { idx, row -> "hw_req_row_${idx}_" + row.joinToString("_") { it.id } }) { _, rowItems ->
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -513,11 +522,24 @@ fun HardwareTabScreen(
                                 }
                             }
                         }
+                        if (hwBanners.isNotEmpty()) {
+                            item(key = "hw_promo_banners") {
+                                BazmoPromoBannerGrid(
+                                    banners = hwBanners,
+                                    onBannerClick = { banner ->
+                                        viewModel.openPromoBanner(banner) { url ->
+                                            runCatching { uriHandler.openUri(url) }
+                                                .onFailure { viewModel.showToast("امکان باز کردن لینک وجود ندارد") }
+                                        }
+                                    }
+                                )
+                            }
+                        }
                         if (hwStores.isNotEmpty()) {
                             item(key = "hw_stores_hdr") {
                                 BazmoSectionHeader("فروشگاه‌های تأمین قطعات")
                             }
-                            items(hwStoreRows, key = { row -> "hw_st_row_" + row.joinToString("_") { it.id } }) { rowItems ->
+                            itemsIndexed(hwStoreRows, key = { idx, row -> "hw_st_row_${idx}_" + row.joinToString("_") { it.id } }) { _, rowItems ->
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -561,7 +583,7 @@ fun HardwareTabScreen(
                                 } else null
                             )
                         }
-                        items(catRows, key = { row -> "hw_cat_row_" + row.joinToString("_") { it.id } }) { rowItems ->
+                        itemsIndexed(catRows, key = { idx, row -> "hw_cat_row_${idx}_" + row.joinToString("_") { it.id } }) { _, rowItems ->
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -588,7 +610,7 @@ fun HardwareTabScreen(
                         if (filteredAds.isEmpty()) {
                             item(key = "hw_ads_empty") { BazmoEmptyState("آگهی با این فیلتر یافت نشد.") }
                         } else {
-                            items(adRows, key = { row -> "hw_ad_row_" + row.joinToString("_") { it.id } }) { rowItems ->
+                            itemsIndexed(adRows, key = { idx, row -> "hw_ad_row_${idx}_" + row.joinToString("_") { it.id } }) { _, rowItems ->
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.spacedBy(10.dp)

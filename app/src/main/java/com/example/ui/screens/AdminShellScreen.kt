@@ -24,8 +24,10 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -74,6 +76,7 @@ import com.example.ui.components.BazmoBadge
 import com.example.ui.components.BazmoCard
 import com.example.ui.components.BazmoDangerButton
 import com.example.ui.components.BazmoDropdownSelector
+import com.example.ui.components.BazmoEmptyState
 import com.example.ui.components.BazmoGoldButton
 import com.example.ui.components.BazmoInput
 import com.example.ui.components.BazmoOutlineButton
@@ -94,6 +97,7 @@ import com.example.ui.theme.LocalBazmoColors
 import com.example.ui.theme.Navy
 import com.example.ui.theme.NavyDeep
 import com.example.ui.theme.NavyLight
+import com.example.ui.theme.PrimaryFill
 import com.example.ui.theme.SuccessGreen
 import com.example.ui.theme.TextMuted
 import com.example.viewmodel.AdminTab
@@ -337,7 +341,11 @@ fun AdminShellScreen(
             // Swipeable Admin Tab Content
             HorizontalPager(
                 state = pagerState,
-                beyondViewportPageCount = 1,
+                beyondViewportPageCount = 2,
+                flingBehavior = PagerDefaults.flingBehavior(
+                    state = pagerState,
+                    snapPositionalThreshold = 0.22f
+                ),
                 key = { adminTabs[it].first.name },
                 modifier = Modifier
                     .weight(1f)
@@ -358,6 +366,15 @@ fun AdminShellScreen(
     }
 }
 
+private data class DashboardKpiMeta(
+    val value: String,
+    val label: String,
+    val emoji: String,
+    val accentColor: Color,
+    val tag: String,
+    val onClick: () -> Unit
+)
+
 @Composable
 private fun AdminDashboardTab(state: BazmoUiState, viewModel: BazmoViewModel) {
     val pendingAdsCount = remember(
@@ -376,6 +393,9 @@ private fun AdminDashboardTab(state: BazmoUiState, viewModel: BazmoViewModel) {
     val pendingRegCount = remember(state.db.registrationRequests) {
         state.db.registrationRequests.count { it.status == "pending" }
     }
+    val activeBannersCount = remember(state.db.banners) {
+        state.db.banners.count { it.hasImage }
+    }
     val totalSales = remember(state.db.orders) {
         state.db.orders.sumOf { it.total }
     }
@@ -383,136 +403,296 @@ private fun AdminDashboardTab(state: BazmoUiState, viewModel: BazmoViewModel) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val kpiCols = if (maxWidth >= 680.dp) 3 else 2
         val kpiItems = listOf(
-            Triple(state.db.users.size.toPersianNumber(), "کل کاربران ثبت‌شده", Navy),
-            Triple(pendingRegCount.toPersianNumber(), "درخواست عضویت منتظر تایید", GoldAccent),
-            Triple(pendingAdsCount.toPersianNumber(), "آگهی در انتظار تایید", GoldAccent),
-            Triple(state.db.orders.size.toPersianNumber(), "سفارش‌های کل", SuccessGreen),
-            Triple(state.db.notifications.size.toPersianNumber(), "نوتیفیکیشن ارسالی", Navy),
-            Triple(state.db.stores.size.toPersianNumber(), "فروشگاه‌های فعال", SuccessGreen)
+            DashboardKpiMeta(
+                value = state.db.users.size.toPersianNumber(),
+                label = "کل کاربران ثبت‌شده",
+                emoji = "👥",
+                accentColor = Navy,
+                tag = "dash_kpi_users",
+                onClick = { viewModel.navigateToAdminSection(AdminTab.USERS, usersSubTab = "users") }
+            ),
+            DashboardKpiMeta(
+                value = pendingRegCount.toPersianNumber(),
+                label = "درخواست عضویت در انتظار",
+                emoji = "📝",
+                accentColor = GoldAccent,
+                tag = "dash_kpi_reg_requests",
+                onClick = { viewModel.navigateToAdminSection(AdminTab.USERS, usersSubTab = "requests") }
+            ),
+            DashboardKpiMeta(
+                value = pendingAdsCount.toPersianNumber(),
+                label = "آگهی و فروشگاه در انتظار",
+                emoji = "🛡️",
+                accentColor = GoldAccent,
+                tag = "dash_kpi_pending_ads",
+                onClick = { viewModel.navigateToAdminSection(AdminTab.ADS, adsSection = "hw") }
+            ),
+            DashboardKpiMeta(
+                value = state.db.orders.size.toPersianNumber(),
+                label = "سفارش‌ها و استعلام‌ها",
+                emoji = "📦",
+                accentColor = SuccessGreen,
+                tag = "dash_kpi_orders",
+                onClick = { viewModel.navigateToAdminSection(AdminTab.REQUESTS) }
+            ),
+            DashboardKpiMeta(
+                value = state.db.notifications.size.toPersianNumber(),
+                label = "نوتیفیکیشن ارسالی",
+                emoji = "🔔",
+                accentColor = Navy,
+                tag = "dash_kpi_notifs",
+                onClick = { viewModel.navigateToAdminSection(AdminTab.NOTIFICATIONS) }
+            ),
+            DashboardKpiMeta(
+                value = state.db.stores.count { it.status == "approved" }.toPersianNumber(),
+                label = "فروشگاه‌های تاییدشده",
+                emoji = "🏪",
+                accentColor = SuccessGreen,
+                tag = "dash_kpi_stores",
+                onClick = { viewModel.navigateToAdminSection(AdminTab.ADS, adsSection = "stores") }
+            )
         )
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp)
         ) {
-            item {
+            item(key = "dash_hero") {
+                Surface(
+                    shape = RoundedCornerShape(22.dp),
+                    shadowElevation = 6.dp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp)
+                        .clip(RoundedCornerShape(22.dp))
+                        .clickable { viewModel.navigateToAdminSection(AdminTab.REQUESTS) }
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .background(Brush.linearGradient(listOf(HeaderBgDeep, HeaderBgLight)))
+                            .padding(18.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "مجموع گردش مالی سفارش‌ها",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFFDBEAFE)
+                            )
+                            BazmoBadge("مشاهده سفارش‌ها ←", BadgeTone.GOLD)
+                        }
+                        Text(
+                            text = totalSales.formatToman(),
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.Black,
+                            color = Color.White,
+                            modifier = Modifier.padding(top = 6.dp, bottom = 10.dp)
+                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Surface(
+                                color = Color.White.copy(alpha = 0.14f),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable { viewModel.navigateToAdminSection(AdminTab.USERS, usersSubTab = "requests") }
+                            ) {
+                                Text(
+                                    text = "📋 ${pendingRegCount.toPersianNumber()} عضویت منتظر",
+                                    color = Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 7.dp),
+                                    maxLines = 1
+                                )
+                            }
+                            Surface(
+                                color = Color.White.copy(alpha = 0.14f),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable { viewModel.navigateToAdminSection(AdminTab.ADS, adsSection = "banners") }
+                            ) {
+                                Text(
+                                    text = "🖼️ ${activeBannersCount.toPersianNumber()} بنر فعال",
+                                    color = GoldAccent,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 7.dp),
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            item(key = "dash_kpis") {
+                BazmoSectionHeader("آمار و هدایت سریع (برای ورود لمس کنید)")
                 kpiItems.chunked(kpiCols).forEachIndexed { idx, rowItems ->
-                    if (idx > 0) Spacer(modifier = Modifier.height(8.dp))
+                    if (idx > 0) Spacer(modifier = Modifier.height(2.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        rowItems.forEach { (value, label, color) ->
-                            KpiCard(value, label, color, Modifier.weight(1f))
+                        rowItems.forEach { kpi ->
+                            KpiCard(
+                                value = kpi.value,
+                                label = kpi.label,
+                                emoji = kpi.emoji,
+                                color = kpi.accentColor,
+                                onClick = kpi.onClick,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag(kpi.tag)
+                            )
                         }
                         repeat(kpiCols - rowItems.size) {
                             Spacer(modifier = Modifier.weight(1f))
                         }
                     }
                 }
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(6.dp))
             }
 
-        item {
-            Surface(
-                shape = RoundedCornerShape(18.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 12.dp)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .background(Brush.linearGradient(listOf(HeaderBgDeep, HeaderBgLight)))
-                        .padding(16.dp)
-                ) {
-                    Text(
-                        text = "مجموع گردش مالی سفارش‌ها",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFFCBD5E1)
-                    )
-                    Text(
-                        text = totalSales.formatToman(),
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Black,
-                        color = Color.White,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                }
-            }
-        }
-
-        item {
-            BazmoSectionHeader("🎭 کنترل داده‌های نمونه کل ایران (۴۸ منطقه)")
-            BazmoCard {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                        Text(
-                            text = if (state.db.showDemoData) "نمایش داده‌های نمونه فعال است" else "داده‌های نمونه موقتاً مخفی شده‌اند",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = NavyDeep
+            item(key = "dash_quick_sections") {
+                BazmoSectionHeader("دسترسی مستقیم بخش‌ها")
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        BazmoPrimaryButton(
+                            text = if (pendingRegCount > 0) "📝 درخواست‌ها (${pendingRegCount.toPersianNumber()})" else "👥 مدیریت کاربران",
+                            onClick = {
+                                viewModel.navigateToAdminSection(
+                                    AdminTab.USERS,
+                                    usersSubTab = if (pendingRegCount > 0) "requests" else "users"
+                                )
+                            },
+                            modifier = Modifier.weight(1f)
                         )
-                        Text(
-                            text = "با خاموش کردن این دکمه، تمام اطلاعات واقعی کاربران و سفارش‌ها حفظ شده و فقط داده‌های نمایشی ۴۸ منطقه پنهان می‌شوند.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = TextMuted,
-                            modifier = Modifier.padding(top = 4.dp)
+                        BazmoGoldButton(
+                            text = "🖼️ ۴ بنر تبلیغاتی",
+                            onClick = { viewModel.navigateToAdminSection(AdminTab.ADS, adsSection = "banners") },
+                            modifier = Modifier.weight(1f)
                         )
                     }
-                    Switch(
-                        checked = state.db.showDemoData,
-                        enabled = !state.session.isSeedingDemo,
-                        onCheckedChange = { viewModel.adminToggleDemoData(it) },
-                        modifier = Modifier.testTag("admin_demo_toggle_switch")
-                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        BazmoSoftButton(
+                            text = "🛡️ تایید آگهی (${pendingAdsCount.toPersianNumber()})",
+                            onClick = { viewModel.navigateToAdminSection(AdminTab.ADS, adsSection = "hw") },
+                            modifier = Modifier.weight(1f)
+                        )
+                        BazmoSoftButton(
+                            text = "🔔 ارسال اعلان",
+                            onClick = { viewModel.navigateToAdminSection(AdminTab.NOTIFICATIONS) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        BazmoSoftButton(
+                            text = "🏪 فروشگاه‌ها",
+                            onClick = { viewModel.navigateToAdminSection(AdminTab.ADS, adsSection = "stores") },
+                            modifier = Modifier.weight(1f)
+                        )
+                        BazmoSoftButton(
+                            text = "🧩 کاتالوگ و انجمن",
+                            onClick = { viewModel.navigateToAdminSection(AdminTab.CATALOG) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                 }
                 Spacer(modifier = Modifier.height(10.dp))
-                BazmoSoftButton(
-                    text = if (state.session.isSeedingDemo) {
-                        "⏳ در حال ساخت نمونه ۴۸ منطقه..."
-                    } else {
-                        "🔄 ساخت / بروزرسانی نمونه ۴۸ منطقه"
-                    },
-                    enabled = !state.session.isSeedingDemo,
-                    onClick = { viewModel.adminSeedDemoDataset() },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("admin_seed_demo_button")
-                )
             }
-        }
 
-        item {
-            BazmoSectionHeader("دسترسی سریع مدیریت")
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    BazmoPrimaryButton(
-                        text = if (pendingRegCount > 0) "👤 درخواست‌ها (${pendingRegCount.toPersianNumber()})" else "👤 تعریف کاربر جدید",
-                        onClick = { viewModel.setAdminTab(AdminTab.USERS) },
-                        modifier = Modifier.weight(1f)
+            item(key = "dash_demo") {
+                BazmoSectionHeader("🎭 کنترل داده‌های نمونه کل ایران (۴۸ منطقه)")
+                BazmoCard {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text(
+                                text = if (state.db.showDemoData) "نمایش داده‌های نمونه فعال است" else "داده‌های نمونه موقتاً مخفی شده‌اند",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = NavyDeep
+                            )
+                            Text(
+                                text = "با خاموش کردن این دکمه، تمام اطلاعات واقعی کاربران و سفارش‌ها حفظ شده و فقط داده‌های نمایشی ۴۸ منطقه پنهان می‌شوند.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextMuted,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
+                        Switch(
+                            checked = state.db.showDemoData,
+                            enabled = !state.session.isSeedingDemo,
+                            onCheckedChange = { viewModel.adminToggleDemoData(it) },
+                            modifier = Modifier.testTag("admin_demo_toggle_switch")
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+                    BazmoSoftButton(
+                        text = if (state.session.isSeedingDemo) {
+                            "⏳ در حال ساخت نمونه ۴۸ منطقه..."
+                        } else {
+                            "🔄 ساخت / بروزرسانی نمونه ۴۸ منطقه"
+                        },
+                        enabled = !state.session.isSeedingDemo,
+                        onClick = { viewModel.adminSeedDemoDataset() },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("admin_seed_demo_button")
                     )
-                    BazmoGoldButton("🔔 ارسال نوتیفیکیشن", { viewModel.setAdminTab(AdminTab.NOTIFICATIONS) }, modifier = Modifier.weight(1f))
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    BazmoSoftButton("🛡️ تایید آگهی‌ها (${pendingAdsCount.toPersianNumber()})", { viewModel.setAdminTab(AdminTab.ADS) }, modifier = Modifier.weight(1f))
-                    BazmoSoftButton("🧩 استعلام و قطعات", { viewModel.setAdminTab(AdminTab.REQUESTS) }, modifier = Modifier.weight(1f))
                 }
             }
         }
-    }
     }
 }
 
 @Composable
-private fun KpiCard(value: String, label: String, color: Color, modifier: Modifier = Modifier) {
-    BazmoCard(modifier = modifier) {
+private fun KpiCard(
+    value: String,
+    label: String,
+    emoji: String,
+    color: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    BazmoCard(
+        onClick = onClick,
+        borderColor = color.copy(alpha = 0.35f),
+        borderWidth = 1.2f,
+        modifier = modifier
+    ) {
         Column(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(text = value, fontSize = 22.sp, fontWeight = FontWeight.Black, color = color)
-            Text(text = label, style = MaterialTheme.typography.labelSmall, color = TextMuted, textAlign = TextAlign.Center)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(text = emoji, fontSize = 18.sp)
+                Text(text = "←", fontSize = 13.sp, color = TextMuted, fontWeight = FontWeight.Bold)
+            }
+            Text(text = value, fontSize = 23.sp, fontWeight = FontWeight.Black, color = color)
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = TextMuted,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
@@ -520,16 +700,24 @@ private fun KpiCard(value: String, label: String, color: Color, modifier: Modifi
 @Composable
 private fun AdminUsersTab(state: BazmoUiState, viewModel: BazmoViewModel) {
     val provs = BazmoLocations.provinces()
+    var newUProv by rememberSaveable { mutableStateOf("تهران") }
+    var newUCity by rememberSaveable { mutableStateOf("تهران") }
+    var newURegion by rememberSaveable { mutableStateOf("علاءالدین و جمهوری") }
     var newUEmail by rememberSaveable { mutableStateOf("") }
     var newUFull by rememberSaveable { mutableStateOf("") }
     var newUPhone by rememberSaveable { mutableStateOf("") }
     var newUPassword by rememberSaveable { mutableStateOf("") }
     var newUTier by rememberSaveable { mutableStateOf(BazmoRoles.REPAIR_TECH) }
-    var newUProv by rememberSaveable { mutableStateOf("تهران") }
-    var newUCity by rememberSaveable { mutableStateOf("تهران") }
-    var newURegion by rememberSaveable { mutableStateOf("علاءالدین و جمهوری") }
+
     var passwordTargetUser by remember { mutableStateOf<UserEntity?>(null) }
     var newWebPassword by rememberSaveable { mutableStateOf("") }
+
+    var editLocationUser by remember { mutableStateOf<UserEntity?>(null) }
+    var editLocProv by remember { mutableStateOf("تهران") }
+    var editLocCity by remember { mutableStateOf("تهران") }
+    var editLocRegion by remember { mutableStateOf("همه مناطق") }
+    var editLocFull by remember { mutableStateOf("") }
+    var editLocPhone by remember { mutableStateOf("") }
 
     if (passwordTargetUser != null) {
         val target = passwordTargetUser!!
@@ -561,316 +749,505 @@ private fun AdminUsersTab(state: BazmoUiState, viewModel: BazmoViewModel) {
         )
     }
 
+    if (editLocationUser != null) {
+        val target = editLocationUser!!
+        AlertDialog(
+            onDismissRequest = { editLocationUser = null },
+            title = { Text("📍 ویرایش آدرس و مشخصات (${target.fullName.ifBlank { target.email }})") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    BazmoDropdownSelector(
+                        label = "استان:",
+                        selectedValue = editLocProv,
+                        options = provs,
+                        onSelect = { p ->
+                            editLocProv = p
+                            val firstC = BazmoLocations.citiesFor(p).firstOrNull() ?: ""
+                            editLocCity = firstC
+                            editLocRegion = BazmoLocations.regionsFor(p, firstC).firstOrNull() ?: "همه مناطق"
+                        }
+                    )
+                    BazmoDropdownSelector(
+                        label = "شهر:",
+                        selectedValue = editLocCity,
+                        options = BazmoLocations.citiesFor(editLocProv),
+                        onSelect = { c ->
+                            editLocCity = c
+                            editLocRegion = BazmoLocations.regionsFor(editLocProv, c).firstOrNull() ?: "همه مناطق"
+                        }
+                    )
+                    BazmoDropdownSelector(
+                        label = "منطقه / محله:",
+                        selectedValue = editLocRegion,
+                        options = BazmoLocations.regionsFor(editLocProv, editLocCity),
+                        onSelect = { editLocRegion = it }
+                    )
+                    BazmoInput(editLocFull, { editLocFull = it }, "نام و نام خانوادگی")
+                    BazmoInput(editLocPhone, { editLocPhone = it }, "شماره تماس", keyboardType = KeyboardType.Phone)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.adminUpdateUserLocation(
+                        user = target,
+                        province = editLocProv,
+                        city = editLocCity,
+                        region = editLocRegion,
+                        fullName = editLocFull,
+                        phone = editLocPhone
+                    ) {
+                        editLocationUser = null
+                    }
+                }) { Text("ذخیره تغییرات") }
+            },
+            dismissButton = {
+                TextButton(onClick = { editLocationUser = null }) { Text("انصراف") }
+            }
+        )
+    }
+
     val pendingRequests = remember(state.db.registrationRequests) {
         state.db.registrationRequests.filter { it.status == "pending" }
+    }
+    val historyRequests = remember(state.db.registrationRequests) {
+        state.db.registrationRequests.filter { it.status != "pending" }
     }
 
     val uf = state.session.adminUserFilter
     val filteredUsers = remember(state.db.users, uf) {
+        val normFilterTier = BazmoLocations.normalizeZwnj(uf.tier)
+        val normFilterProv = BazmoLocations.normalizeZwnj(uf.province)
         state.db.users.filter { u ->
             (uf.search.isBlank() ||
                 u.fullName.contains(uf.search, ignoreCase = true) ||
                 u.email.contains(uf.search, ignoreCase = true) ||
                 u.phone.contains(uf.search, ignoreCase = true)) &&
-                (uf.tier == "همه" || u.tier == uf.tier) &&
+                (uf.tier == "همه" || BazmoLocations.normalizeZwnj(u.tier) == normFilterTier) &&
                 (BazmoLocations.isAllScope(uf.province) ||
-                    BazmoLocations.normalizeZwnj(u.province) == BazmoLocations.normalizeZwnj(uf.province)) &&
+                    BazmoLocations.normalizeZwnj(u.province) == normFilterProv) &&
                 (uf.statusFilter == "همه" ||
                     (uf.statusFilter == "فعال" && u.active) ||
                     (uf.statusFilter == "مسدود" && !u.active))
         }
     }
 
+    val subTab = state.session.adminUsersSubTab
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp)
     ) {
-        if (pendingRequests.isNotEmpty()) {
+        item(key = "users_subtab_switcher") {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Surface(
+                    color = if (subTab == "users") PrimaryFill else MaterialTheme.colorScheme.surface,
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.2.dp, if (subTab == "users") PrimaryFill else NavyLight.copy(alpha = 0.35f)),
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 44.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { viewModel.setAdminUsersSubTab("users") }
+                        .testTag("admin_users_subtab_users")
+                ) {
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
+                        Text(
+                            text = "👥 کاربران (${filteredUsers.size.toPersianNumber()})",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = if (subTab == "users") Color.White else NavyDeep,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                Surface(
+                    color = if (subTab == "requests") PrimaryFill else MaterialTheme.colorScheme.surface,
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.2.dp, if (subTab == "requests") PrimaryFill else NavyLight.copy(alpha = 0.35f)),
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 44.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { viewModel.setAdminUsersSubTab("requests") }
+                        .testTag("admin_users_subtab_requests")
+                ) {
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
+                        Text(
+                            text = "📋 درخواست عضویت (${pendingRequests.size.toPersianNumber()})",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = if (subTab == "requests") Color.White else NavyDeep,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
+
+        if (subTab == "requests") {
             item(key = "hdr_pending_regs") {
                 BazmoSectionHeader(
                     title = "📋 درخواست‌های عضویت در انتظار تایید",
                     badgeText = "${pendingRequests.size.toPersianNumber()} مورد"
                 )
             }
-            items(pendingRequests, key = { "reg_${it.id}" }) { req: RegistrationRequestEntity ->
-                var chosenTier by rememberSaveable(req.id) {
-                    mutableStateOf(BazmoRoles.normalizeTier(req.requestedTier))
+            if (pendingRequests.isEmpty()) {
+                item(key = "empty_pending_regs") {
+                    BazmoEmptyState("در حال حاضر درخواست عضویت منتظر تایید وجود ندارد.")
                 }
-                BazmoCard(borderColor = GoldAccent, borderWidth = 1.5f) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+            } else {
+                itemsIndexed(pendingRequests, key = { idx, req -> "reg_${idx}_${req.id}" }) { _, req: RegistrationRequestEntity ->
+                    var chosenTier by rememberSaveable(req.id) {
+                        mutableStateOf(BazmoRoles.normalizeTier(req.requestedTier))
+                    }
+                    BazmoCard(borderColor = GoldAccent, borderWidth = 1.5f) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = req.fullName,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.ExtraBold,
+                                modifier = Modifier.weight(1f)
+                            )
+                            BazmoBadge("⏳ منتظر احراز هویت", BadgeTone.GOLD)
+                        }
                         Text(
-                            text = req.fullName,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.ExtraBold,
-                            modifier = Modifier.weight(1f)
+                            text = "${req.email} | 📞 ${req.phone}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextMuted,
+                            modifier = Modifier.padding(top = 5.dp)
                         )
-                        BazmoBadge("⏳ منتظر احراز هویت", BadgeTone.GOLD)
+                        Text(
+                            text = "📍 ${req.province}، ${req.city} (${req.region})",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextMuted,
+                            modifier = Modifier.padding(top = 2.dp)
+                        )
+                        if (req.note.isNotBlank()) {
+                            BazmoWarrantyBox(
+                                text = "📝 ${req.note}",
+                                modifier = Modifier.padding(top = 6.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "تعیین نقش صنفی جهت تایید نهایی:",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Navy,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(bottom = 4.dp)
+                        )
+                        BazmoDropdownSelector(
+                            selectedValue = chosenTier,
+                            options = BazmoRoles.ALL_ROLES,
+                            onSelect = { chosenTier = it },
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            BazmoSuccessButton(
+                                text = "✓ تایید و فعال‌سازی",
+                                onClick = { viewModel.adminApproveRegistration(req, chosenTier) },
+                                compact = true,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("approve_reg_${req.id}")
+                            )
+                            BazmoDangerButton(
+                                text = "✕ رد درخواست",
+                                onClick = { viewModel.adminRejectRegistration(req.id) },
+                                compact = true,
+                                modifier = Modifier.testTag("reject_reg_${req.id}")
+                            )
+                        }
                     }
-                    Text(
-                        text = "${req.email} | 📞 ${req.phone}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextMuted,
-                        modifier = Modifier.padding(top = 5.dp)
+                }
+            }
+
+            if (historyRequests.isNotEmpty()) {
+                item(key = "hdr_history_regs") {
+                    BazmoSectionHeader(
+                        title = "سوابق درخواست‌های بررسی‌شده",
+                        badgeText = "${historyRequests.size.toPersianNumber()} مورد"
                     )
-                    Text(
-                        text = "📍 ${req.province}، ${req.city} (${req.region})",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextMuted,
-                        modifier = Modifier.padding(top = 2.dp)
-                    )
-                    if (req.note.isNotBlank()) {
-                        BazmoWarrantyBox(
-                            text = "📝 ${req.note}",
-                            modifier = Modifier.padding(top = 6.dp)
+                }
+                itemsIndexed(historyRequests, key = { idx, req -> "reghist_${idx}_${req.id}" }) { _, req ->
+                    val approved = req.status == "approved"
+                    BazmoCard {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(req.fullName, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
+                            BazmoBadge(if (approved) "تایید شده" else "رد شده", if (approved) BadgeTone.GREEN else BadgeTone.RED)
+                        }
+                        Text(
+                            text = "${req.email} | 📍 ${req.province}، ${req.city} | نقش: ${req.requestedTier}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextMuted,
+                            modifier = Modifier.padding(top = 4.dp)
                         )
                     }
-                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+        } else {
+            item(key = "create_user_card") {
+                BazmoSectionHeader("➕ تعریف کاربر جدید در سیستم")
+                BazmoCard {
                     Text(
-                        text = "تعیین نقش صنفی جهت تایید نهایی:",
+                        text = "۱. ابتدا استان، شهر و منطقه کاربر را مشخص کنید:",
                         style = MaterialTheme.typography.labelSmall,
                         color = Navy,
                         fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(bottom = 4.dp)
+                        modifier = Modifier.padding(bottom = 6.dp)
                     )
+                    Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.padding(bottom = 8.dp)) {
+                        BazmoDropdownSelector(
+                            label = "استان:",
+                            selectedValue = newUProv,
+                            options = provs,
+                            onSelect = { p ->
+                                newUProv = p
+                                val firstC = BazmoLocations.citiesFor(p).firstOrNull() ?: ""
+                                newUCity = firstC
+                                newURegion = BazmoLocations.regionsFor(p, firstC).firstOrNull() ?: "همه مناطق"
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                        BazmoDropdownSelector(
+                            label = "شهر:",
+                            selectedValue = newUCity,
+                            options = BazmoLocations.citiesFor(newUProv),
+                            onSelect = { c ->
+                                newUCity = c
+                                newURegion = BazmoLocations.regionsFor(newUProv, c).firstOrNull() ?: "همه مناطق"
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                     BazmoDropdownSelector(
-                        selectedValue = chosenTier,
-                        options = BazmoRoles.ALL_ROLES,
-                        onSelect = { chosenTier = it },
+                        label = "منطقه / محله:",
+                        selectedValue = newURegion,
+                        options = BazmoLocations.regionsFor(newUProv, newUCity),
+                        onSelect = { newURegion = it },
+                        modifier = Modifier.padding(bottom = 10.dp)
+                    )
+                    Text(
+                        text = "۲. مشخصات کاربری و دسترسی:",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Navy,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    )
+                    BazmoInput(
+                        value = newUEmail,
+                        onValueChange = { newUEmail = it },
+                        placeholder = "ایمیل معتبر کاربر (نام کاربری جهت ورود)",
+                        keyboardType = KeyboardType.Email,
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        BazmoSuccessButton(
-                            text = "✓ تایید و فعال‌سازی",
-                            onClick = { viewModel.adminApproveRegistration(req, chosenTier) },
-                            compact = true,
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("approve_reg_${req.id}")
-                        )
-                        BazmoDangerButton(
-                            text = "✕ رد درخواست",
-                            onClick = { viewModel.adminRejectRegistration(req.id) },
-                            compact = true,
-                            modifier = Modifier.testTag("reject_reg_${req.id}")
-                        )
+                    Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.padding(bottom = 8.dp)) {
+                        BazmoInput(newUFull, { newUFull = it }, "نام و نام خانوادگی", modifier = Modifier.weight(1f))
+                        BazmoInput(newUPhone, { newUPhone = it }, "شماره موبایل", keyboardType = KeyboardType.Phone, modifier = Modifier.weight(1f))
                     }
-                }
-            }
-        }
-
-        item {
-            BazmoSectionHeader("➕ تعریف کاربر جدید در سیستم")
-            BazmoCard {
-                BazmoInput(
-                    value = newUEmail,
-                    onValueChange = { newUEmail = it },
-                    placeholder = "ایمیل معتبر کاربر (نام کاربری جهت ورود)",
-                    keyboardType = KeyboardType.Email,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.padding(bottom = 8.dp)) {
-                    BazmoInput(newUFull, { newUFull = it }, "نام و نام خانوادگی", modifier = Modifier.weight(1f))
-                    BazmoInput(newUPhone, { newUPhone = it }, "شماره موبایل", keyboardType = KeyboardType.Phone, modifier = Modifier.weight(1f))
-                }
-                BazmoInput(
-                    value = newUPassword,
-                    onValueChange = { newUPassword = it },
-                    placeholder = "رمز عبور ورود کاربر (حداقل ۶ کاراکتر - اختیاری)",
-                    keyboardType = KeyboardType.Password,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-                BazmoDropdownSelector(
-                    selectedValue = newUTier,
-                    options = BazmoRoles.ALL_ROLES,
-                    onSelect = { newUTier = it },
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.padding(bottom = 8.dp)) {
-                    BazmoDropdownSelector(
-                        selectedValue = newUProv,
-                        options = provs,
-                        onSelect = { p ->
-                            newUProv = p
-                            val firstC = BazmoLocations.citiesFor(p).firstOrNull() ?: ""
-                            newUCity = firstC
-                            newURegion = BazmoLocations.regionsFor(p, firstC).firstOrNull() ?: "همه مناطق"
-                        },
-                        modifier = Modifier.weight(1f)
+                    BazmoInput(
+                        value = newUPassword,
+                        onValueChange = { newUPassword = it },
+                        placeholder = "رمز عبور ورود کاربر (حداقل ۶ کاراکتر - اختیاری)",
+                        keyboardType = KeyboardType.Password,
+                        modifier = Modifier.padding(bottom = 8.dp)
                     )
                     BazmoDropdownSelector(
-                        selectedValue = newUCity,
-                        options = BazmoLocations.citiesFor(newUProv),
-                        onSelect = { c ->
-                            newUCity = c
-                            newURegion = BazmoLocations.regionsFor(newUProv, c).firstOrNull() ?: "همه مناطق"
-                        },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-                BazmoDropdownSelector(
-                    selectedValue = newURegion,
-                    options = BazmoLocations.regionsFor(newUProv, newUCity),
-                    onSelect = { newURegion = it },
-                    modifier = Modifier.padding(bottom = 10.dp)
-                )
-                BazmoPrimaryButton(
-                    text = "✓ ثبت و فعال‌سازی کاربر",
-                    onClick = {
-                        viewModel.adminCreateUser(newUEmail, newUFull, newUPhone, newUTier, newUProv, newUCity, newURegion, newUPassword) {
-                            newUEmail = ""
-                            newUFull = ""
-                            newUPhone = ""
-                            newUPassword = ""
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        }
-
-        item {
-            BazmoSectionHeader("لیست کاربران (${filteredUsers.size.toPersianNumber()})")
-            BazmoCard {
-                BazmoSearchBar(
-                    value = uf.search,
-                    onValueChange = { q -> viewModel.updateAdminUserFilter { it.copy(search = q) } },
-                    placeholder = "جستجوی نام، ایمیل یا تلفن...",
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(7.dp),
-                    modifier = Modifier.padding(bottom = 8.dp)
-                ) {
-                    BazmoDropdownSelector(
-                        selectedValue = if (uf.tier == "همه") "همه نقش‌ها" else uf.tier,
-                        options = listOf("همه نقش‌ها") + BazmoRoles.ALL_ROLES,
-                        onSelect = { choice ->
-                            val t = if (choice == "همه نقش‌ها") "همه" else choice
-                            viewModel.updateAdminUserFilter { it.copy(tier = t) }
-                        },
-                        modifier = Modifier.weight(1f)
-                    )
-                    BazmoDropdownSelector(
-                        selectedValue = if (uf.statusFilter == "همه") "همه وضعیت‌ها" else uf.statusFilter,
-                        options = listOf("همه وضعیت‌ها", "فعال", "مسدود"),
-                        onSelect = { choice ->
-                            val st = if (choice == "همه وضعیت‌ها") "همه" else choice
-                            viewModel.updateAdminUserFilter { it.copy(statusFilter = st) }
-                        },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-                BazmoDropdownSelector(
-                    selectedValue = uf.province,
-                    options = listOf("همه استان‌ها", BazmoLocations.ALL_COUNTRY) + provs,
-                    onSelect = { p -> viewModel.updateAdminUserFilter { it.copy(province = p) } }
-                )
-            }
-        }
-
-        items(filteredUsers, key = { it.id.ifBlank { it.uid }.ifBlank { it.email } }) { u ->
-            val targetId = u.id.ifBlank { u.uid }
-            val isPendingInvite = u.uid.startsWith("u_")
-            BazmoCard {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(
-                            text = u.fullName,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.ExtraBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false)
-                        )
-                        BazmoBadge(u.tier, BadgeTone.BLUE)
-                    }
-                    BazmoBadge(if (u.active) "فعال" else "مسدود", if (u.active) BadgeTone.GREEN else BadgeTone.RED)
-                }
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(top = 6.dp)
-                ) {
-                    BazmoBadge(
-                        text = if (isPendingInvite) "⏳ در انتظار اولین ورود" else "✓ متصل به سیستم",
-                        tone = if (isPendingInvite) BadgeTone.GOLD else BadgeTone.PURPLE
-                    )
-                    if (BazmoRoles.canCreateStore(u.tier, isAdmin = false)) {
-                        BazmoBadge("🏪 مجاز به ثبت فروشگاه", BadgeTone.GREEN)
-                    }
-                }
-                Text(
-                    text = "${u.email.ifBlank { "شناسه: ${u.uid.take(8)}" }} | 📞 ${u.phone.ifBlank { "-" }}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextMuted,
-                    modifier = Modifier.padding(top = 6.dp)
-                )
-                Text(
-                    text = "📍 ${u.province}، ${u.city} (${u.region})",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextMuted,
-                    modifier = Modifier.padding(top = 2.dp, bottom = 8.dp)
-                )
-                if (u.tier != "ادمین") {
-                    Text(
-                        text = "تغییر نقش کاربر:",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = TextMuted,
-                        modifier = Modifier.padding(bottom = 4.dp)
-                    )
-                    BazmoDropdownSelector(
-                        selectedValue = u.tier,
+                        label = "نقش صنفی:",
+                        selectedValue = newUTier,
                         options = BazmoRoles.ALL_ROLES,
-                        onSelect = { newRole ->
-                            if (newRole != u.tier) {
-                                viewModel.adminUpdateUserTier(u, newRole)
+                        onSelect = { newUTier = it },
+                        modifier = Modifier.padding(bottom = 10.dp)
+                    )
+                    BazmoPrimaryButton(
+                        text = "✓ ثبت و فعال‌سازی کاربر",
+                        onClick = {
+                            viewModel.adminCreateUser(newUEmail, newUFull, newUPhone, newUTier, newUProv, newUCity, newURegion, newUPassword) {
+                                newUEmail = ""
+                                newUFull = ""
+                                newUPhone = ""
+                                newUPassword = ""
                             }
                         },
-                        modifier = Modifier.padding(bottom = 8.dp)
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (u.active) {
-                        BazmoGoldButton(
-                            text = "🚫 مسدود",
-                            onClick = { viewModel.adminToggleUserActive(u) },
-                            compact = true,
-                            modifier = Modifier.testTag("block_user_button_$targetId")
+            }
+
+            item(key = "users_filter_card") {
+                BazmoSectionHeader("لیست کاربران (${filteredUsers.size.toPersianNumber()})")
+                BazmoCard {
+                    BazmoSearchBar(
+                        value = uf.search,
+                        onValueChange = { q -> viewModel.updateAdminUserFilter { it.copy(search = q) } },
+                        placeholder = "جستجوی نام، ایمیل یا تلفن...",
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(7.dp),
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    ) {
+                        BazmoDropdownSelector(
+                            selectedValue = if (uf.tier == "همه") "همه نقش‌ها" else uf.tier,
+                            options = listOf("همه نقش‌ها") + BazmoRoles.ALL_ROLES,
+                            onSelect = { choice ->
+                                val t = if (choice == "همه نقش‌ها") "همه" else choice
+                                viewModel.updateAdminUserFilter { it.copy(tier = t) }
+                            },
+                            modifier = Modifier.weight(1f)
                         )
-                    } else {
-                        BazmoSuccessButton(
-                            text = "✓ فعال‌سازی",
-                            onClick = { viewModel.adminToggleUserActive(u) },
-                            compact = true,
-                            modifier = Modifier.testTag("reactivate_user_button_$targetId")
+                        BazmoDropdownSelector(
+                            selectedValue = if (uf.statusFilter == "همه") "همه وضعیت‌ها" else uf.statusFilter,
+                            options = listOf("همه وضعیت‌ها", "فعال", "مسدود"),
+                            onSelect = { choice ->
+                                val st = if (choice == "همه وضعیت‌ها") "همه" else choice
+                                viewModel.updateAdminUserFilter { it.copy(statusFilter = st) }
+                            },
+                            modifier = Modifier.weight(1f)
                         )
                     }
-                    BazmoSoftButton(
-                        text = "🔑 رمز وب",
-                        onClick = {
-                            newWebPassword = ""
-                            passwordTargetUser = u
-                        },
-                        compact = true,
-                        modifier = Modifier.testTag("set_password_button_$targetId")
+                    BazmoDropdownSelector(
+                        selectedValue = uf.province,
+                        options = listOf("همه استان‌ها", BazmoLocations.ALL_COUNTRY) + provs,
+                        onSelect = { p -> viewModel.updateAdminUserFilter { it.copy(province = p) } }
                     )
-                    BazmoDangerButton(
-                        text = "🗑️ حذف",
-                        onClick = { viewModel.adminDeleteUser(targetId) },
-                        compact = true
-                    )
+                }
+            }
+
+            if (filteredUsers.isEmpty()) {
+                item(key = "users_empty_state") {
+                    BazmoEmptyState("کاربری با این فیلتر یافت نشد.")
+                }
+            } else {
+                itemsIndexed(filteredUsers, key = { idx, u -> "usr_${idx}_${u.id.ifBlank { u.uid }.ifBlank { u.email }}" }) { _, u ->
+                    val targetId = u.id.ifBlank { u.uid }
+                    val isPendingInvite = u.uid.startsWith("u_")
+                    BazmoCard {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(
+                                    text = u.fullName,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false)
+                                )
+                                BazmoBadge(u.tier, BadgeTone.BLUE)
+                            }
+                            BazmoBadge(if (u.active) "فعال" else "مسدود", if (u.active) BadgeTone.GREEN else BadgeTone.RED)
+                        }
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(top = 6.dp)
+                        ) {
+                            BazmoBadge(
+                                text = if (isPendingInvite) "⏳ در انتظار اولین ورود" else "✓ متصل به سیستم",
+                                tone = if (isPendingInvite) BadgeTone.GOLD else BadgeTone.PURPLE
+                            )
+                            if (BazmoRoles.canCreateStore(u.tier, isAdmin = false)) {
+                                BazmoBadge("🏪 مجاز به ثبت فروشگاه", BadgeTone.GREEN)
+                            }
+                        }
+                        Text(
+                            text = "${u.email.ifBlank { "شناسه: ${u.uid.take(8)}" }} | 📞 ${u.phone.ifBlank { "-" }}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextMuted,
+                            modifier = Modifier.padding(top = 6.dp)
+                        )
+                        Text(
+                            text = "📍 ${u.province}، ${u.city} (${u.region})",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextMuted,
+                            modifier = Modifier.padding(top = 2.dp, bottom = 8.dp)
+                        )
+                        if (u.tier != "ادمین") {
+                            Text(
+                                text = "تغییر نقش کاربر:",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = TextMuted,
+                                modifier = Modifier.padding(bottom = 4.dp)
+                            )
+                            BazmoDropdownSelector(
+                                selectedValue = u.tier,
+                                options = BazmoRoles.ALL_ROLES,
+                                onSelect = { newRole ->
+                                    if (newRole != u.tier) {
+                                        viewModel.adminUpdateUserTier(u, newRole)
+                                    }
+                                },
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                            if (u.active) {
+                                BazmoGoldButton(
+                                    text = "🚫 مسدود",
+                                    onClick = { viewModel.adminToggleUserActive(u) },
+                                    compact = true,
+                                    modifier = Modifier.testTag("block_user_button_$targetId")
+                                )
+                            } else {
+                                BazmoSuccessButton(
+                                    text = "✓ فعال‌سازی",
+                                    onClick = { viewModel.adminToggleUserActive(u) },
+                                    compact = true,
+                                    modifier = Modifier.testTag("reactivate_user_button_$targetId")
+                                )
+                            }
+                            BazmoSoftButton(
+                                text = "📍 آدرس",
+                                onClick = {
+                                    editLocProv = u.province.ifBlank { "تهران" }
+                                    editLocCity = u.city.ifBlank { BazmoLocations.citiesFor(editLocProv).firstOrNull() ?: "تهران" }
+                                    editLocRegion = u.region.ifBlank { "همه مناطق" }
+                                    editLocFull = u.fullName
+                                    editLocPhone = u.phone
+                                    editLocationUser = u
+                                },
+                                compact = true,
+                                modifier = Modifier.testTag("edit_location_button_$targetId")
+                            )
+                            BazmoSoftButton(
+                                text = "🔑 رمز",
+                                onClick = {
+                                    newWebPassword = ""
+                                    passwordTargetUser = u
+                                },
+                                compact = true,
+                                modifier = Modifier.testTag("set_password_button_$targetId")
+                            )
+                            BazmoDangerButton(
+                                text = "🗑️",
+                                onClick = { viewModel.adminDeleteUser(targetId) },
+                                compact = true
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -978,7 +1355,7 @@ private fun AdminNotificationsTab(state: BazmoUiState, viewModel: BazmoViewModel
         item {
             BazmoSectionHeader("تاریخچه نوتیفیکیشن‌های ارسالی (${state.db.notifications.size.toPersianNumber()})")
         }
-        items(state.db.notifications, key = { it.id }) { n ->
+        itemsIndexed(state.db.notifications, key = { idx, n -> "notif_${idx}_${n.id}" }) { _, n ->
             BazmoCard {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -997,216 +1374,6 @@ private fun AdminNotificationsTab(state: BazmoUiState, viewModel: BazmoViewModel
     }
 }
 
-@Composable
-private fun AdminAdsStoresTab(state: BazmoUiState, viewModel: BazmoViewModel) {
-    var stName by rememberSaveable { mutableStateOf("") }
-    var stProv by rememberSaveable { mutableStateOf("") }
-    var stCity by rememberSaveable { mutableStateOf("") }
-    var stRegion by rememberSaveable { mutableStateOf("") }
-    var stPhone by rememberSaveable { mutableStateOf("") }
-    val storeTypes = listOf(
-        "both" to "موبایل و جانبی",
-        "mobile" to "فقط موبایل",
-        "acc" to "فقط جانبی",
-        "hw" to "فروشگاه قطعات سخت‌افزار"
-    )
-    var stType by rememberSaveable { mutableStateOf("both") }
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp)
-    ) {
-        item { BazmoSectionHeader("تایید / حذف آگهی‌های همکاران") }
-        items(state.db.hwAds, key = { it.id }) { ad ->
-            val (label, tone) = when (ad.status) {
-                "approved" -> "تایید شده" to BadgeTone.GREEN
-                "pending" -> "در انتظار" to BadgeTone.GOLD
-                else -> "رد شده" to BadgeTone.RED
-            }
-            val secLabel = when (ad.section) {
-                "mobile" -> "📱 موبایل"
-                "acc" -> "🎧 جانبی"
-                else -> "🔧 سخت‌افزار"
-            }
-            BazmoCard {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(ad.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
-                    Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                        BazmoBadge(secLabel, BadgeTone.BLUE)
-                        BazmoBadge(label, tone)
-                    }
-                }
-                Text(
-                    text = "${ad.seller} | ${ad.city} | ${ad.price.formatToman()}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextMuted,
-                    modifier = Modifier.padding(vertical = 6.dp)
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    BazmoSuccessButton("✓ تایید", { viewModel.adminSetHwAdStatus(ad, "approved") }, compact = true)
-                    BazmoGoldButton("✕ رد", { viewModel.adminSetHwAdStatus(ad, "rejected") }, compact = true)
-                    BazmoDangerButton("🗑️ حذف", { viewModel.adminDeleteHwAd(ad.id) }, compact = true)
-                }
-            }
-        }
-
-        item { BazmoSectionHeader("آموزش‌ها و باکس‌های نرم‌افزار") }
-        items(state.db.tutorials, key = { it.id }) { t ->
-            BazmoCard {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("🎓 ${t.title}", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                    BazmoBadge(t.status, if (t.status == "approved") BadgeTone.GREEN else BadgeTone.GOLD)
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    BazmoSuccessButton("✓ تایید", { viewModel.adminApproveTutorial(t) }, compact = true)
-                    BazmoDangerButton("🗑️ حذف", { viewModel.adminDeleteTutorial(t.id) }, compact = true)
-                }
-            }
-        }
-        items(state.db.boxes, key = { it.id }) { b ->
-            BazmoCard {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("🧰 ${b.name}", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                    BazmoBadge(b.status, if (b.status == "approved") BadgeTone.GREEN else BadgeTone.GOLD)
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    BazmoSuccessButton("✓ تایید", { viewModel.adminApproveBox(b) }, compact = true)
-                    BazmoDangerButton("🗑️ حذف", { viewModel.adminDeleteBox(b.id) }, compact = true)
-                }
-            }
-        }
-
-        item {
-            BazmoSectionHeader("🏪 مدیریت و افزودن فروشگاه‌ها")
-            BazmoCard {
-                BazmoInput(stName, { stName = it }, "نام فروشگاه", modifier = Modifier.padding(bottom = 8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(bottom = 8.dp)) {
-                    BazmoInput(stProv, { stProv = it }, "استان (مثلاً تهران)", modifier = Modifier.weight(1f))
-                    BazmoInput(stCity, { stCity = it }, "شهر (مثلاً تهران)", modifier = Modifier.weight(1f))
-                }
-                BazmoInput(stRegion, { stRegion = it }, "منطقه (مثلاً علاءالدین و جمهوری)", modifier = Modifier.padding(bottom = 8.dp))
-                BazmoInput(stPhone, { stPhone = it }, "تلفن تماس", keyboardType = KeyboardType.Phone, modifier = Modifier.padding(bottom = 8.dp))
-                val curTypeLabel = storeTypes.find { it.first == stType }?.second ?: "موبایل و جانبی"
-                BazmoDropdownSelector(
-                    selectedValue = curTypeLabel,
-                    options = storeTypes.map { it.second },
-                    onSelect = { chosen -> stType = storeTypes.find { it.second == chosen }?.first ?: "both" },
-                    modifier = Modifier.padding(bottom = 10.dp)
-                )
-                BazmoPrimaryButton(
-                    text = "+ ثبت فروشگاه جدید",
-                    onClick = {
-                        if (viewModel.adminAddStore(stName, stProv, stCity, stRegion, stPhone, stType)) {
-                            stName = ""
-                            stProv = ""
-                            stCity = ""
-                            stRegion = ""
-                            stPhone = ""
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        }
-
-        items(state.db.stores, key = { it.id }) { s ->
-            val (stStatusLabel, stStatusTone) = when (s.status) {
-                "approved" -> "تاییدشده" to BadgeTone.GREEN
-                "rejected" -> "ردشده" to BadgeTone.RED
-                else -> "در انتظار تایید" to BadgeTone.GOLD
-            }
-            BazmoCard {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(s.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold)
-                            BazmoBadge(BazmoRoles.storeTypeLabel(s.type), BadgeTone.BLUE)
-                        }
-                        Text(
-                            text = "📍 ${s.province}، ${s.city} (${s.region.ifBlank { "مرکز" }}) | 📞 ${s.phone}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = TextMuted,
-                            modifier = Modifier.padding(top = 3.dp)
-                        )
-                    }
-                    BazmoBadge(stStatusLabel, stStatusTone)
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (s.status != "approved") {
-                        BazmoSuccessButton(
-                            text = "✓ تایید",
-                            onClick = { viewModel.adminSetStoreStatus(s.id, "approved") },
-                            compact = true,
-                            modifier = Modifier.testTag("approve_store_${s.id}")
-                        )
-                    }
-                    if (s.status != "rejected") {
-                        BazmoGoldButton(
-                            text = "✕ رد",
-                            onClick = { viewModel.adminSetStoreStatus(s.id, "rejected") },
-                            compact = true,
-                            modifier = Modifier.testTag("reject_store_${s.id}")
-                        )
-                    }
-                    BazmoDangerButton("حذف", { viewModel.adminDeleteStore(s.id) }, compact = true)
-                }
-            }
-        }
-
-        item {
-            BazmoSectionHeader("🪑 آگهی‌های اجاره میز کار (${state.db.deskRentals.size.toPersianNumber()})")
-        }
-        items(state.db.deskRentals, key = { it.id }) { d ->
-            val (dLabel, dTone) = when (d.status) {
-                "approved" -> "تاییدشده" to BadgeTone.GREEN
-                "rejected" -> "ردشده" to BadgeTone.RED
-                else -> "در انتظار تایید" to BadgeTone.GOLD
-            }
-            BazmoCard {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(d.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
-                    Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                        BazmoBadge(d.category, BadgeTone.BLUE)
-                        BazmoBadge(dLabel, dTone)
-                    }
-                }
-                Text(
-                    text = "🏪 ${d.storeName.ifBlank { d.ownerName }} | 📍 ${d.city} (${d.region})",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextMuted,
-                    modifier = Modifier.padding(vertical = 6.dp)
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (d.status != "approved") {
-                        BazmoSuccessButton("✓ تایید", { viewModel.adminSetDeskRentalStatus(d.id, "approved") }, compact = true)
-                    }
-                    if (d.status != "rejected") {
-                        BazmoGoldButton("✕ رد", { viewModel.adminSetDeskRentalStatus(d.id, "rejected") }, compact = true)
-                    }
-                    BazmoDangerButton("🗑️ حذف", { viewModel.deleteDeskRental(d.id) }, compact = true)
-                }
-            }
-        }
-    }
-}
 
 @Composable
 private fun AdminRequestsTab(state: BazmoUiState, viewModel: BazmoViewModel) {
@@ -1217,7 +1384,7 @@ private fun AdminRequestsTab(state: BazmoUiState, viewModel: BazmoViewModel) {
         contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp)
     ) {
         item { BazmoSectionHeader("📦 مدیریت سفارش‌ها (${state.db.orders.size.toPersianNumber()})") }
-        items(state.db.orders, key = { it.id }) { o ->
+        itemsIndexed(state.db.orders, key = { idx, o -> "ord_${idx}_${o.id}" }) { _, o ->
             BazmoCard {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("${o.id} (${o.deliveryType})", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold)
@@ -1249,7 +1416,7 @@ private fun AdminRequestsTab(state: BazmoUiState, viewModel: BazmoViewModel) {
         }
 
         item { BazmoSectionHeader("🔔 استعلام‌های موجودی جانبی") }
-        items(state.db.inquiries, key = { it.id }) { inq ->
+        itemsIndexed(state.db.inquiries, key = { idx, inq -> "inq_${idx}_${inq.id}" }) { _, inq ->
             BazmoCard {
                 Text(inq.accName, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold)
                 Text("${inq.storeName} | وضعیت: ${inq.status}", style = MaterialTheme.typography.bodySmall, color = TextMuted, modifier = Modifier.padding(vertical = 4.dp))
@@ -1261,7 +1428,7 @@ private fun AdminRequestsTab(state: BazmoUiState, viewModel: BazmoViewModel) {
         }
 
         item { BazmoSectionHeader("🧩 درخواست‌های تخصصی قطعه سخت‌افزار") }
-        items(state.db.hwRequests, key = { it.id }) { hr ->
+        itemsIndexed(state.db.hwRequests, key = { idx, hr -> "hwreq_${idx}_${hr.id}" }) { _, hr ->
             var noteText by rememberSaveable(hr.id) { mutableStateOf(hr.note) }
             BazmoCard {
                 Text("${hr.brand} ${hr.model} (${hr.partType})", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold)
@@ -1274,7 +1441,7 @@ private fun AdminRequestsTab(state: BazmoUiState, viewModel: BazmoViewModel) {
         }
 
         item { BazmoSectionHeader("📋 درخواست‌های نرم‌افزار") }
-        items(state.db.swRequests, key = { it.id }) { sr ->
+        itemsIndexed(state.db.swRequests, key = { idx, sr -> "swreq_${idx}_${sr.id}" }) { _, sr ->
             var replyText by rememberSaveable(sr.id) { mutableStateOf(sr.reply) }
             BazmoCard {
                 Text(sr.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(bottom = 6.dp))
@@ -1364,7 +1531,7 @@ private fun AdminCatalogForumTab(state: BazmoUiState, viewModel: BazmoViewModel)
         }
 
         item { BazmoSectionHeader("💬 مدیریت انجمن‌های سخت‌افزار و نرم‌افزار") }
-        items(state.db.forumPosts, key = { it.id }) { p ->
+        itemsIndexed(state.db.forumPosts, key = { idx, p -> "forum_${idx}_${p.id}" }) { _, p ->
             BazmoCard {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     BazmoBadge(

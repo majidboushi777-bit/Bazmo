@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -28,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -42,6 +44,7 @@ import com.example.ui.components.BazmoEmptyState
 import com.example.ui.components.BazmoFilterChip
 import com.example.ui.components.BazmoGoldButton
 import com.example.ui.components.BazmoPrimaryButton
+import com.example.ui.components.BazmoPromoBannerGrid
 import com.example.ui.components.BazmoSearchBar
 import com.example.ui.components.BazmoSectionHeader
 import com.example.ui.components.BazmoSoftButton
@@ -64,6 +67,8 @@ fun AccessoriesTabScreen(
     viewModel: BazmoViewModel
 ) {
     val av = state.session.accView
+    val uriHandler = LocalUriHandler.current
+    val accBanners = remember(state.db.banners) { state.bannersForSection("acc") }
     val cats = remember(state.db.accessories) {
         listOf("همه") + state.db.accessories.map { it.cat }.distinct()
     }
@@ -154,6 +159,20 @@ fun AccessoriesTabScreen(
                 }
             }
 
+            if (accBanners.isNotEmpty()) {
+                item(key = "acc_promo_banners") {
+                    BazmoPromoBannerGrid(
+                        banners = accBanners,
+                        onBannerClick = { banner ->
+                            viewModel.openPromoBanner(banner) { url ->
+                                runCatching { uriHandler.openUri(url) }
+                                    .onFailure { viewModel.showToast("امکان باز کردن لینک وجود ندارد") }
+                            }
+                        }
+                    )
+                }
+            }
+
             item(key = "acc_cats") {
                 BazmoSectionHeader("دسته‌بندی لوازم جانبی")
                 LazyRow(
@@ -231,7 +250,7 @@ fun AccessoriesTabScreen(
             if (products.isEmpty()) {
                 item(key = "acc_empty") { BazmoEmptyState("محصولی یافت نشد.") }
             } else {
-                items(productRows, key = { row -> "acc_row_" + row.joinToString("_") { it.id } }) { rowItems ->
+                itemsIndexed(productRows, key = { idx, row -> "acc_row_${idx}_" + row.joinToString("_") { it.id } }) { _, rowItems ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -309,7 +328,7 @@ fun AccessoriesTabScreen(
                         badgeText = "${accUserAds.size.toPersianNumber()} آگهی"
                     )
                 }
-                items(accAdRows, key = { row -> "acc_ad_row_" + row.joinToString("_") { it.id } }) { rowItems ->
+                itemsIndexed(accAdRows, key = { idx, row -> "acc_ad_row_${idx}_" + row.joinToString("_") { it.id } }) { _, rowItems ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)

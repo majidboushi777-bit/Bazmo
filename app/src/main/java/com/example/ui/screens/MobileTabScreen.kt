@@ -24,11 +24,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -36,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -52,6 +55,7 @@ import com.example.ui.components.BazmoDropdownSelector
 import com.example.ui.components.BazmoEmptyState
 import com.example.ui.components.BazmoGoldButton
 import com.example.ui.components.BazmoPrimaryButton
+import com.example.ui.components.BazmoPromoBannerGrid
 import com.example.ui.components.BazmoSearchBar
 import com.example.ui.components.BazmoSectionHeader
 import com.example.ui.components.BazmoSoftButton
@@ -82,6 +86,8 @@ fun MobileTabScreen(
     viewModel: BazmoViewModel
 ) {
     val mv = state.session.mobileView
+    val uriHandler = LocalUriHandler.current
+    val mobileBanners = remember(state.db.banners) { state.bannersForSection("mobile") }
     val storesById = remember(state.db.stores) {
         state.db.stores.associateBy { it.id }
     }
@@ -119,7 +125,9 @@ fun MobileTabScreen(
                 MobileSubMode.STORE -> {
                     val stId = mv.storeId
                     if (stId == null) {
-                        viewModel.backMobileToList()
+                        LaunchedEffect(Unit) {
+                            viewModel.backMobileToList()
+                        }
                         return@AnimatedContent
                     }
                     val store = state.getStore(stId)
@@ -181,7 +189,7 @@ fun MobileTabScreen(
                         item(key = "store_offers_hdr") {
                             BazmoSectionHeader("موبایل‌های موجود در این فروشگاه")
                         }
-                        items(offerRows, key = { row -> row.joinToString("_") { it.id } }) { rowItems ->
+                        itemsIndexed(offerRows, key = { idx, row -> "mob_st_${idx}_" + row.joinToString("_") { it.id } }) { _, rowItems ->
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -244,7 +252,9 @@ fun MobileTabScreen(
                     val mobId = mv.modelId
                     val mob = mobId?.let { mobilesById[it] }
                     if (mob == null) {
-                        viewModel.backMobileToList()
+                        LaunchedEffect(mobId) {
+                            viewModel.backMobileToList()
+                        }
                         return@AnimatedContent
                     }
 
@@ -306,7 +316,7 @@ fun MobileTabScreen(
                                 badgeText = "${sortedOffers.size.toPersianNumber()} فروشنده"
                             )
                         }
-                        items(offerRows, key = { row -> row.joinToString("_") { it.id } }) { rowItems ->
+                        itemsIndexed(offerRows, key = { idx, row -> "mob_mod_${idx}_" + row.joinToString("_") { it.id } }) { _, rowItems ->
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -476,6 +486,20 @@ fun MobileTabScreen(
                             }
                         }
 
+                        if (mobileBanners.isNotEmpty()) {
+                            item(key = "mobile_promo_banners") {
+                                BazmoPromoBannerGrid(
+                                    banners = mobileBanners,
+                                    onBannerClick = { banner ->
+                                        viewModel.openPromoBanner(banner) { url ->
+                                            runCatching { uriHandler.openUri(url) }
+                                                .onFailure { viewModel.showToast("امکان باز کردن لینک وجود ندارد") }
+                                        }
+                                    }
+                                )
+                            }
+                        }
+
                         item(key = "mobile_brand_strip") {
                             LazyRow(
                                 horizontalArrangement = Arrangement.spacedBy(9.dp),
@@ -588,7 +612,7 @@ fun MobileTabScreen(
                                     )
                                 }
                                 val brandRows = brandModels.chunked(cols)
-                                items(brandRows, key = { row -> "mob_${br}_" + row.joinToString("_") { it.id } }) { rowItems ->
+                                itemsIndexed(brandRows, key = { idx, row -> "mob_${br}_${idx}_" + row.joinToString("_") { it.id } }) { _, rowItems ->
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -645,7 +669,7 @@ fun MobileTabScreen(
                                     badgeText = "${mobileUserAds.size.toPersianNumber()} آگهی"
                                 )
                             }
-                            items(mobileUserAdRows, key = { row -> "mob_ad_row_" + row.joinToString("_") { it.id } }) { rowItems ->
+                            itemsIndexed(mobileUserAdRows, key = { idx, row -> "mob_ad_row_${idx}_" + row.joinToString("_") { it.id } }) { _, rowItems ->
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.spacedBy(10.dp)

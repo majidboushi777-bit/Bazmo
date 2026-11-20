@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.data.AccessoryEntity
 import com.example.data.BackgroundNotifConfig
+import com.example.data.BannerEntity
 import com.example.data.BazmoAuthManager
 import com.example.data.BazmoDbState
 import com.example.data.BazmoLocations
@@ -162,6 +163,8 @@ data class BazmoSessionState(
     val showDeskRentals: Boolean = false,
     val showMyStore: Boolean = false,
     val adminTab: AdminTab = AdminTab.DASHBOARD,
+    val adminUsersSubTab: String = "users",
+    val adminAdsSection: String = "hw",
     val adminNotifFilter: AdminNotifFilter = AdminNotifFilter(),
     val adminUserFilter: AdminUserFilter = AdminUserFilter(),
     val mobileView: MobileUiFilter = MobileUiFilter(),
@@ -246,6 +249,9 @@ data class BazmoUiState(
 
     fun chatThreadsForAd(adId: String): List<ChatThreadEntity> =
         db.chatThreads.filter { it.adId == adId }
+
+    fun bannersForSection(section: String): List<BannerEntity> =
+        db.banners.filter { it.section == section && it.hasImage }.sortedBy { it.slotIndex }
 }
 
 class BazmoViewModel(
@@ -303,10 +309,6 @@ class BazmoViewModel(
         } else {
             session
         }
-        val latestTier = ownProfile?.tier
-        if (ready && !notRegistered && !blockedInvite && !dbListenerJob?.isCompleted.let { it ?: true } && latestTier != null && latestTier != observedTier && !updatedSession.isAdminUser) {
-            startObservingDb(updatedSession.isAdminUser, latestTier)
-        }
         BazmoUiState(
             isReady = ready,
             currentUid = uid,
@@ -333,6 +335,17 @@ class BazmoViewModel(
     init {
         BazmoNotificationHelper.ensureChannel(appContext)
         startSession()
+        viewModelScope.launch {
+            uiState.collect { st ->
+                val latestTier = st.session.currentUser?.tier
+                if (st.isReady && !st.isNotRegistered && !st.isBlocked &&
+                    dbListenerJob?.isActive == true &&
+                    latestTier != null && latestTier != observedTier && !st.session.isAdminUser
+                ) {
+                    startObservingDb(st.session.isAdminUser, latestTier)
+                }
+            }
+        }
     }
 
     private fun syncBackgroundNotificationService() {
@@ -427,6 +440,7 @@ class BazmoViewModel(
                     hasReceivedInitialDbSnapshot = true
                     dbState.value = latest
                     isReadyState.value = true
+                    viewModelScope.launch { repository.saveCachedDbState(appContext, latest) }
 
                     val unreadMatching = matchingUnreadNotifications(latest)
                     val postedLive = BazmoNotificationHelper.dispatchNewNotifications(
@@ -449,6 +463,12 @@ class BazmoViewModel(
 
     private fun startSession(notifyIfDenied: Boolean = false) {
         viewModelScope.launch {
+            val cachedDb = repository.loadCachedDbState(appContext)
+            if (cachedDb != null) {
+                dbState.value = cachedDb
+                hasReceivedInitialDbSnapshot = true
+            }
+
             val isAdmin = initialIsSuperAdmin || repository.checkIsAdminDoc(uid)
             sessionState.update { it.copy(isAdminUser = isAdmin) }
 
@@ -493,14 +513,22 @@ class BazmoViewModel(
                                 modal = if (result.promptProfile) BazmoModal.ProfileSetup else it.modal
                             )
                         }
+                        if (cachedDb != null) {
+                            isReadyState.value = true
+                        }
                         syncBackgroundNotificationService()
                     }
                 }
             }.onFailure { err ->
-                showToast(err.message ?: "خطا در دریافت پروفایل")
-                if (!isAdmin) {
-                    isNotRegisteredState.value = true
+                if (cachedDb != null) {
                     isReadyState.value = true
+                    shouldObserve = true
+                } else {
+                    showToast(err.message ?: "خطا در دریافت پروفایل")
+                    if (!isAdmin) {
+                        isNotRegisteredState.value = true
+                        isReadyState.value = true
+                    }
                 }
             }
 
@@ -569,41 +597,63 @@ class BazmoViewModel(
 
     fun saveOwnProfile(
         fullName: String,
-        phone: String,
-        province: String,
-        city: String,
-        region: String
+        phone: String
     ) {
         val fn = fullName.trim().take(120)
         if (fn.isEmpty()) {
             showToast("نام و نام خانوادگی الزامی است")
             return
         }
-        val safeProv = province.trim().ifEmpty { "تهران" }.take(80)
-        val safeCity = city.trim().ifEmpty { "تهران" }.take(80)
-        val safeRegion = region.trim().ifEmpty { "همه مناطق" }.take(80)
+        val cleanPhone = phone.trim().take(40)
         viewModelScope.launch {
             repository.updateOwnProfile(
                 uid = uid,
                 fullName = fn,
-                phone = phone.trim().take(40),
-                province = safeProv,
-                city = safeCity,
-                region = safeRegion
+                phone = cleanPhone
             ).onSuccess {
                 sessionState.update {
                     it.copy(
-                        province = safeProv,
-                        city = safeCity,
-                        region = safeRegion,
+                        currentUser = it.currentUser?.copy(fullName = fn, phone = cleanPhone),
                         modal = null
                     )
                 }
-                syncBackgroundNotificationService()
-                showToast("پروفایل کاربری ذخیره شد")
+                showToast("نام و شماره تماس پروفایل ذخیره شد")
             }.onFailure { err ->
                 showToast(err.message ?: "خطا در ذخیره پروفایل")
             }
+        }
+    }
+
+    fun openPromoBanner(banner: BannerEntity, onOpenExternalUrl: (String) -> Unit) {
+        when (banner.linkType) {
+            "store" -> {
+                val target = banner.linkTarget.trim()
+                if (target.isNotEmpty()) {
+                    sessionState.update {
+                        it.copy(
+                            activeTab = 0,
+                            showDeskRentals = false,
+                            showMyStore = false,
+                            mobileView = it.mobileView.copy(
+                                mode = MobileSubMode.STORE,
+                                storeId = target
+                            )
+                        )
+                    }
+                }
+            }
+            "url" -> {
+                val raw = banner.linkTarget.trim()
+                if (raw.isNotEmpty() && !raw.startsWith("javascript:", ignoreCase = true) && !raw.startsWith("data:", ignoreCase = true)) {
+                    val safeUrl = if (raw.startsWith("http://", ignoreCase = true) || raw.startsWith("https://", ignoreCase = true)) {
+                        raw
+                    } else {
+                        "https://$raw"
+                    }
+                    onOpenExternalUrl(safeUrl)
+                }
+            }
+            else -> Unit
         }
     }
 
@@ -1393,6 +1443,31 @@ class BazmoViewModel(
         }
     }
 
+    fun setAdminUsersSubTab(subTab: String) {
+        sessionState.update { it.copy(adminUsersSubTab = subTab) }
+    }
+
+    fun setAdminAdsSection(section: String) {
+        sessionState.update { it.copy(adminAdsSection = section) }
+    }
+
+    fun navigateToAdminSection(
+        tab: AdminTab,
+        usersSubTab: String? = null,
+        adsSection: String? = null
+    ) {
+        sessionState.update {
+            it.copy(
+                adminTab = tab,
+                adminUsersSubTab = usersSubTab ?: it.adminUsersSubTab,
+                adminAdsSection = adsSection ?: it.adminAdsSection
+            )
+        }
+        if (tab == AdminTab.USERS && sessionState.value.isAdminUser) {
+            refreshAdminUsers()
+        }
+    }
+
     fun refreshAdminUsers() {
         if (!sessionState.value.isAdminUser) return
         viewModelScope.launch {
@@ -1527,6 +1602,103 @@ class BazmoViewModel(
                     onSuccess()
                 }
                 .onFailure { err -> showToast(err.message ?: "خطا در تنظیم رمز عبور") }
+        }
+    }
+
+    fun adminUpdateUserLocation(
+        user: UserEntity,
+        province: String,
+        city: String,
+        region: String,
+        fullName: String,
+        phone: String,
+        onSuccess: () -> Unit = {}
+    ) {
+        val targetId = user.id.ifBlank { user.uid }
+        val safeProv = province.trim().ifEmpty { "تهران" }.take(80)
+        val safeCity = city.trim().ifEmpty { "تهران" }.take(80)
+        val safeRegion = region.trim().ifEmpty { "همه مناطق" }.take(80)
+        val safeName = fullName.trim().take(120).ifEmpty { user.fullName }
+        val safePhone = phone.trim().take(40)
+        viewModelScope.launch {
+            repository.updateUserLocationByAdmin(
+                userId = targetId,
+                email = user.email,
+                province = safeProv,
+                city = safeCity,
+                region = safeRegion,
+                fullName = safeName,
+                phone = safePhone
+            ).onSuccess {
+                dbState.update { cur ->
+                    cur.copy(
+                        users = cur.users.map { u ->
+                            if (u.id == targetId || u.uid == user.uid) {
+                                u.copy(
+                                    province = safeProv,
+                                    city = safeCity,
+                                    region = safeRegion,
+                                    fullName = safeName,
+                                    phone = safePhone
+                                )
+                            } else u
+                        }
+                    )
+                }
+                showToast("آدرس و مشخصات ${safeName.ifBlank { user.email }} ذخیره شد")
+                onSuccess()
+            }.onFailure { err ->
+                showToast(err.message ?: "خطا در ذخیره آدرس کاربر")
+            }
+        }
+    }
+
+    fun adminUpsertBanner(
+        section: String,
+        slotIndex: Int,
+        title: String,
+        linkType: String,
+        linkTarget: String,
+        imageMime: String,
+        imageData: String,
+        keepExistingImage: Boolean,
+        onSuccess: () -> Unit = {}
+    ) {
+        if (imageData.isBlank() && !keepExistingImage) {
+            showToast("لطفاً تصویر بنر را انتخاب کنید")
+            return
+        }
+        viewModelScope.launch {
+            repository.upsertBannerByAdmin(
+                section = section,
+                slotIndex = slotIndex,
+                title = title,
+                linkType = linkType,
+                linkTarget = linkTarget,
+                imageMime = imageMime,
+                imageData = imageData,
+                keepExistingImage = keepExistingImage
+            ).onSuccess {
+                showToast("بنر تبلیغاتی با موفقیت ذخیره شد")
+                onSuccess()
+            }.onFailure { err ->
+                showToast(err.message ?: "خطا در ذخیره بنر تبلیغاتی")
+            }
+        }
+    }
+
+    fun adminDeleteBanner(id: String) {
+        viewModelScope.launch {
+            repository.deleteBannerByAdmin(id)
+                .onSuccess {
+                    dbState.update { cur ->
+                        cur.copy(banners = cur.banners.filterNot { it.id == id })
+                    }
+                    showToast("بنر حذف شد")
+                }
+                .onFailure { err ->
+                    showToast(err.message ?: "خطا در حذف بنر")
+                }
         }
     }
 

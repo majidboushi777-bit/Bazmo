@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -101,6 +102,7 @@ import com.example.ui.components.BazmoInput
 import com.example.ui.components.BazmoOutlineButton
 import com.example.ui.components.BazmoPrimaryButton
 import com.example.ui.components.BazmoSoftButton
+import com.example.ui.components.BazmoWarrantyBox
 import com.example.ui.theme.AppBackground
 import com.example.ui.theme.BazmoThemeManager
 import com.example.ui.theme.BorderLight
@@ -161,9 +163,9 @@ fun UserShellScreen(
             pagerState.animateScrollToPage(state.session.activeTab)
         }
     }
-    LaunchedEffect(pagerState.currentPage) {
-        if (pagerState.currentPage != state.session.activeTab) {
-            viewModel.setActiveTab(pagerState.currentPage)
+    LaunchedEffect(pagerState.settledPage) {
+        if (pagerState.settledPage != state.session.activeTab) {
+            viewModel.setActiveTab(pagerState.settledPage)
         }
     }
 
@@ -613,10 +615,14 @@ fun UserShellScreen(
                 }
 
                 else -> {
-                    // Swipeable Pager with beyondViewportPageCount = 1 for silky instant tab swipes
+                    // Swipeable Pager with all 4 tabs pre-kept & tuned snap threshold for silky swipes
                     HorizontalPager(
                         state = pagerState,
-                        beyondViewportPageCount = 1,
+                        beyondViewportPageCount = 3,
+                        flingBehavior = PagerDefaults.flingBehavior(
+                            state = pagerState,
+                            snapPositionalThreshold = 0.22f
+                        ),
                         key = { it },
                         modifier = Modifier
                             .weight(1f)
@@ -841,12 +847,9 @@ private fun ModalContent(
             var phone by rememberSaveable { mutableStateOf(curUser?.phone ?: "") }
             val assignedTier = if (state.session.isAdminUser) "ادمین"
             else BazmoRoles.normalizeTier(curUser?.tier ?: BazmoRoles.REPAIR_TECH)
-            var prov by rememberSaveable { mutableStateOf(curUser?.province?.ifBlank { state.session.province } ?: state.session.province) }
-            var city by rememberSaveable { mutableStateOf(curUser?.city?.ifBlank { state.session.city } ?: state.session.city) }
-            var region by rememberSaveable { mutableStateOf(curUser?.region?.ifBlank { state.session.region } ?: state.session.region) }
-            val provs = BazmoLocations.provinces()
-            val cities = BazmoLocations.citiesFor(prov)
-            val regions = BazmoLocations.regionsFor(prov, city)
+            val regProv = curUser?.province?.ifBlank { state.session.province } ?: state.session.province
+            val regCity = curUser?.city?.ifBlank { state.session.city } ?: state.session.city
+            val regRegion = curUser?.region?.ifBlank { state.session.region } ?: state.session.region
 
             ModalHeader("👤 پروفایل و نقش صنفی شما", { viewModel.closeModal() })
             if (state.authEmail.isNotBlank()) {
@@ -910,39 +913,16 @@ private fun ModalContent(
                 )
             }
             BazmoInput(fullName, { fullName = it }, "نام و نام خانوادگی", modifier = Modifier.padding(bottom = 8.dp))
-            BazmoInput(phone, { phone = it }, "شماره تماس (اختیاری)", keyboardType = KeyboardType.Phone, modifier = Modifier.padding(bottom = 8.dp))
-            BazmoDropdownSelector(
-                label = "استان:",
-                selectedValue = prov,
-                options = provs,
-                onSelect = { newP ->
-                    prov = newP
-                    val firstCity = BazmoLocations.citiesFor(newP).firstOrNull() ?: ""
-                    city = firstCity
-                    region = "همه مناطق"
-                },
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-            BazmoDropdownSelector(
-                label = "شهر:",
-                selectedValue = city,
-                options = cities,
-                onSelect = { newC ->
-                    city = newC
-                    region = "همه مناطق"
-                },
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-            BazmoDropdownSelector(
-                label = "منطقه / محله:",
-                selectedValue = region,
-                options = regions,
-                onSelect = { region = it },
-                modifier = Modifier.padding(bottom = 14.dp)
+            BazmoInput(phone, { phone = it }, "شماره تماس (اختیاری)", keyboardType = KeyboardType.Phone, modifier = Modifier.padding(bottom = 10.dp))
+            BazmoWarrantyBox(
+                text = "📍 آدرس ثبت‌شده: استان $regProv، $regCity ($regRegion)\n🔒 تغییر آدرس ثبت‌شده حساب کاربری فقط توسط مدیر سیستم امکان‌پذیر است.",
+                modifier = Modifier
+                    .padding(bottom = 14.dp)
+                    .testTag("profile_locked_address_box")
             )
             BazmoPrimaryButton(
                 text = "✓ ذخیره اطلاعات پروفایل",
-                onClick = { viewModel.saveOwnProfile(fullName, phone, prov, city, region) },
+                onClick = { viewModel.saveOwnProfile(fullName, phone) },
                 modifier = Modifier.fillMaxWidth()
             )
         }

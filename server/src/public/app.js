@@ -128,6 +128,12 @@
     adminUserTier: 'همه نقش‌ها',
     adminUserStatus: 'all',
     adminUserProvince: 'همه استان‌ها',
+    adminUserSubTab: 'users', // 'users' | 'requests'
+    adminAdsTile: 'hw', // 'hw' | 'mobile' | 'acc' | 'stores' | 'desks' | 'tutorials' | 'boxes' | 'banners'
+    adminAdsSearch: '',
+    adminAdsFilter: 'all', // 'all' | 'pending'
+    adminAdsShowAll: false,
+    adminBannerSection: 'mobile', // 'mobile' | 'software' | 'acc' | 'hw'
     adminNotifProv: 'همه استان‌ها',
     adminNotifCity: 'همه شهرها',
     adminNotifRegion: 'همه مناطق',
@@ -136,6 +142,14 @@
     prevLocation: { province: 'تهران', city: 'تهران', region: 'علاءالدین و جمهوری' },
     theme: localStorage.getItem('bazmo_theme') || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'),
     // Runtime
+    savedAccount: (() => {
+      try {
+        const raw = localStorage.getItem('bazmo_web_saved_account');
+        return raw ? JSON.parse(raw) : null;
+      } catch {
+        return null;
+      }
+    })(),
     cart: [],
     ws: null,
     wsOpen: false,
@@ -301,7 +315,7 @@
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       if (res.status === 401 && path !== '/api/auth/login') {
-        logoutLocal();
+        logoutLocal(true);
       }
       if (res.status === 404 && !data.error) {
         throw new Error('این سرویس روی سرور یافت نشد (۴۰۴). لطفاً نسخه جدید سرور را مستقر کنید.');
@@ -324,7 +338,7 @@
     if (res.status === 304) return null;
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      if (res.status === 401) logoutLocal();
+      if (res.status === 401) logoutLocal(true);
       throw new Error(data.error || `خطای سرور (${res.status})`);
     }
     const nextEtag = res.headers.get('ETag');
@@ -332,7 +346,48 @@
     return data;
   }
 
-  function logoutLocal() {
+  function saveAccountForQuickLogin(session, token, extra = {}) {
+    if (!session || !token) return;
+    const prev = state.savedAccount || {};
+    const next = {
+      uid: session.uid || prev.uid || '',
+      email: session.email || prev.email || '',
+      displayName: session.user?.fullName || session.displayName || prev.displayName || 'همکار بازمو',
+      isAdmin: Boolean(session.isAdmin),
+      token,
+      webauthnCredId: extra.webauthnCredId !== undefined ? extra.webauthnCredId : (prev.uid === session.uid ? prev.webauthnCredId || '' : ''),
+      savedAt: Date.now()
+    };
+    state.savedAccount = next;
+    try {
+      localStorage.setItem('bazmo_web_saved_account', JSON.stringify(next));
+    } catch {}
+  }
+
+  function writeCachedAppState(session, dbData) {
+    if (!session || !dbData || !session.uid) return;
+    try {
+      localStorage.setItem(
+        'bazmo_web_cached_state',
+        JSON.stringify({ uid: session.uid, session, db: dbData, ts: Date.now() })
+      );
+    } catch {}
+  }
+
+  function readCachedAppState(uidHint = '') {
+    try {
+      const raw = localStorage.getItem('bazmo_web_cached_state');
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed?.session || !parsed?.db) return null;
+      if (uidHint && parsed.uid !== uidHint) return null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  }
+
+  function logoutLocal(forgetSaved = false) {
     state.token = '';
     state.session = null;
     state.db = null;
@@ -343,6 +398,11 @@
     state.hasSyncedOnce = false;
     state.cart = [];
     localStorage.removeItem('bazmo_web_token');
+    if (forgetSaved) {
+      state.savedAccount = null;
+      localStorage.removeItem('bazmo_web_saved_account');
+      localStorage.removeItem('bazmo_web_cached_state');
+    }
     if (state.ws) {
       try { state.ws.close(); } catch {}
       state.ws = null;
@@ -356,6 +416,73 @@
       state.bgPollTimer = null;
     }
     syncSessionWithServiceWorker(null);
+  }
+
+  function bufferToBase64Url(buf) {
+    const bytes = new Uint8Array(buf);
+    let bin = '';
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+
+  function base64UrlToBuffer(str) {
+    const pad = '='.repeat((4 - (str.length % 4)) % 4);
+    const b64 = (str + pad).replace(/-/g, '+').replace(/_/g, '/');
+    const bin = atob(b64);
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return arr.buffer;
+  }
+
+  async function enrollBrowserBiometric() {
+    if (!window.PublicKeyCredential || !navigator.credentials?.create || !state.session) {
+      toast('مرورگر فعلی از اثر انگشت WebAuthn پشتیبانی نمی‌کند؛ ورود سریع همچنان فعال است.');
+      return false;
+    }
+    try {
+      const challenge = crypto.getRandomValues(new Uint8Array(32));
+      const userId = new TextEncoder().encode(String(state.session.uid || 'bazmo_user'));
+      const cred = await navigator.credentials.create({
+        publicKey: {
+          challenge,
+          rp: { name: 'بازمو', id: location.hostname },
+          user: {
+            id: userId,
+            name: state.session.email || 'user@bazmo.ir',
+            displayName: state.session.user?.fullName || state.session.displayName || 'همکار بازمو'
+          },
+          pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+          authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required' },
+          timeout: 45000
+        }
+      });
+      if (cred && cred.rawId) {
+        const credId = bufferToBase64Url(cred.rawId);
+        saveAccountForQuickLogin(state.session, state.token, { webauthnCredId: credId });
+        toast('قفل اثر انگشت / بیومتریک مرورگر برای ورود بعدی فعال شد ✓');
+        return true;
+      }
+    } catch {
+      toast('ثبت اثر انگشت لغو شد یا در این دستگاه در دسترس نیست.');
+    }
+    return false;
+  }
+
+  async function verifyBrowserBiometricIfEnrolled() {
+    const saved = state.savedAccount;
+    if (!saved?.webauthnCredId) return true;
+    if (!window.PublicKeyCredential || !navigator.credentials?.get) return true;
+    const challenge = crypto.getRandomValues(new Uint8Array(32));
+    await navigator.credentials.get({
+      publicKey: {
+        challenge,
+        rpId: location.hostname,
+        allowCredentials: [{ type: 'public-key', id: base64UrlToBuffer(saved.webauthnCredId) }],
+        userVerification: 'required',
+        timeout: 45000
+      }
+    });
+    return true;
   }
 
   function persistNotifiedIds() {
@@ -601,7 +728,7 @@
     } catch {}
   }
 
-  async function loadAppState(silent = false, forceRefresh = false) {
+  async function loadAppState(silent = false, forceRefresh = false, skipSessionFetch = false) {
     if (!state.token) return;
     if (forceRefresh) state.stateEtag = '';
     if (!silent) {
@@ -609,14 +736,20 @@
       render();
     }
     try {
-      const [sessionRes, dbRes] = await Promise.all([api('/api/auth/session'), fetchStateWithEtag()]);
+      const [sessionRes, dbRes] = await Promise.all([
+        skipSessionFetch && state.session ? Promise.resolve(state.session) : api('/api/auth/session'),
+        fetchStateWithEtag()
+      ]);
       if (!dbRes && state.db) {
         state.session = sessionRes;
+        saveAccountForQuickLogin(sessionRes, state.token);
         return;
       }
       const prevNotifIds = new Set((state.db?.notifications || []).map((n) => n.id));
       state.session = sessionRes;
       state.db = dbRes;
+      saveAccountForQuickLogin(sessionRes, state.token);
+      if (dbRes) writeCachedAppState(sessionRes, dbRes);
       if (sessionRes.user) {
         if (!state.hasSyncedOnce) {
           state.province = sessionRes.user.province || 'تهران';
@@ -637,7 +770,7 @@
         }
         state.hasSyncedOnce = true;
         syncSessionWithServiceWorker(buildSwSessionPayload(), Array.from(state.notifiedIds));
-        await registerBackgroundNotifSync();
+        registerBackgroundNotifSync();
         startBackgroundNotifPolling();
       }
       connectWebSocket();
@@ -650,12 +783,25 @@
   }
 
   async function init() {
-    await initServiceWorker();
-    try {
-      state.config = await api('/api/config/public');
-    } catch {}
+    initServiceWorker();
+    api('/api/config/public')
+      .then((cfg) => { state.config = cfg; })
+      .catch(() => {});
+
     if (state.token) {
-      await loadAppState(false);
+      const cached = readCachedAppState(state.savedAccount?.uid || '');
+      if (cached) {
+        state.session = cached.session;
+        state.db = cached.db;
+        state.province = cached.session.user?.province || state.province;
+        state.city = cached.session.user?.city || state.city;
+        state.region = cached.session.user?.region || state.region;
+        state.loading = false;
+        render();
+        loadAppState(true);
+      } else {
+        await loadAppState(false);
+      }
       if (location.search.includes('openNotifications=1') && state.session && state.db) {
         openNotificationsModal();
       }
@@ -678,6 +824,7 @@
 
   function renderLoginScreen() {
     const dark = isDarkTheme();
+    const saved = state.savedAccount;
     return `
       <div class="login-shell">
         <div class="login-hero-bg"></div>
@@ -695,6 +842,24 @@
           <h1 class="brand-title">بازمو</h1>
           <p class="brand-sub">شبکه یکپارچه و رسمی صنف موبایل ایران</p>
 
+          ${saved && saved.token ? `
+            <div class="saved-account-card">
+              <div class="row space-between" style="margin-bottom:8px;">
+                <div>
+                  <div style="font-size:14px;font-weight:900;color:var(--navy-deep);">👋 خوش آمدید، ${esc(saved.displayName || 'همکار بازمو')}</div>
+                  <div class="muted" dir="ltr" style="text-align:right;">${esc(saved.email)}</div>
+                </div>
+                <button type="button" id="forget-saved-account-btn" class="btn btn-outline btn-sm">تغییر حساب</button>
+              </div>
+              <button type="button" id="biometric-quick-login-btn" class="btn-biometric-glass" ${state.isLoggingIn ? 'disabled' : ''}>
+                <svg width="21" height="21" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path d="M17.81 4.47c-.08 0-.16-.02-.23-.06C15.66 3.42 14 3 12.01 3c-1.98 0-3.86.47-5.57 1.41-.24.13-.54.04-.68-.2-.13-.24-.04-.55.2-.68C7.82 2.52 9.86 2 12.01 2c2.13 0 3.99.47 6.03 1.52.25.13.34.43.21.67-.09.18-.26.28-.44.28zM3.5 9.72c-.1 0-.2-.03-.29-.09-.23-.16-.28-.47-.12-.7.99-1.4 2.25-2.5 3.75-3.27C9.98 4.04 14 4.03 17.15 5.65c1.5.77 2.76 1.86 3.75 3.25.16.22.11.54-.12.7-.23.16-.54.11-.7-.12-.9-1.26-2.04-2.25-3.39-2.94-2.87-1.47-6.54-1.47-9.4.01-1.36.7-2.5 1.7-3.4 2.96-.08.14-.23.21-.39.21zm6.25 12.07c-.13 0-.26-.05-.35-.15-.87-.87-1.34-1.43-2.01-2.64-.69-1.23-1.05-2.73-1.05-4.34 0-2.97 2.54-5.39 5.66-5.39s5.66 2.42 5.66 5.39c0 .28-.22.5-.5.5s-.5-.22-.5-.5c0-2.42-2.09-4.39-4.66-4.39-2.57 0-4.66 1.97-4.66 4.39 0 1.44.32 2.77.93 3.85.64 1.15 1.08 1.64 1.85 2.42.19.2.19.51 0 .71-.11.1-.24.15-.37.15zm7.17-1.85c-1.19 0-2.24-.3-3.1-.89-1.49-1.01-2.38-2.65-2.38-4.39 0-.28.22-.5.5-.5s.5.22.5.5c0 1.41.72 2.74 1.94 3.56.71.48 1.54.71 2.54.71.24 0 .64-.03 1.04-.1.27-.05.53.13.58.41.05.27-.13.53-.41.58-.57.11-1.07.12-1.21.12zM14.91 22c-.04 0-.09-.01-.13-.02-1.59-.44-2.63-1.03-3.72-2.1-1.4-1.39-2.17-3.24-2.17-5.22 0-1.62 1.38-2.94 3.08-2.94 1.7 0 3.08 1.32 3.08 2.94 0 1.07.93 1.94 2.08 1.94s2.08-.87 2.08-1.94c0-3.77-3.25-6.83-7.25-6.83-2.84 0-5.44 1.58-6.61 4.03-.39.81-.59 1.76-.59 2.8 0 .78.07 2.01.67 3.61.1.26-.03.55-.29.64-.26.1-.55-.04-.64-.29-.49-1.31-.73-2.61-.73-3.96 0-1.2.23-2.29.68-3.24 1.33-2.79 4.28-4.6 7.51-4.6 4.55 0 8.25 3.51 8.25 7.83 0 1.62-1.38 2.94-3.08 2.94s-3.08-1.32-3.08-2.94c0-1.07-.93-1.94-2.08-1.94s-2.08.87-2.08 1.94c0 1.71.66 3.31 1.87 4.51.95.94 1.86 1.46 3.27 1.85.27.07.42.35.35.61-.05.23-.26.38-.47.38z"/>
+                </svg>
+                <span>${saved.webauthnCredId ? 'ورود سریع با اثر انگشت' : 'ورود سریع با حساب ذخیره‌شده / اثر انگشت'}</span>
+              </button>
+            </div>
+          ` : ''}
+
           <div class="card login-glass-card">
             <h2 style="margin:0 0 4px;font-size:18px;text-align:center;color:var(--navy-deep);font-weight:800;">ورود همکاران صنف موبایل</h2>
             <p class="muted" style="text-align:center;margin:0 0 16px;">ورود به حساب‌های ثبت‌نام‌شده با ایمیل و رمز عبور</p>
@@ -706,7 +871,7 @@
               <div class="form-group">
                 <label class="form-label" for="login-email">ایمیل (نام کاربری)</label>
                 <div class="glass-input-wrap">
-                  <input id="login-email" class="glass-input" type="email" dir="ltr" placeholder="name@example.com" value="${esc(state.loginEmail)}" ${state.isLoggingIn ? 'disabled' : ''} required />
+                  <input id="login-email" class="glass-input" type="email" dir="ltr" placeholder="name@example.com" value="${esc(state.loginEmail || saved?.email || '')}" ${state.isLoggingIn ? 'disabled' : ''} required />
                 </div>
               </div>
               <div class="form-group">
@@ -756,6 +921,51 @@
         render();
       };
     }
+    const quickLoginBtn = document.getElementById('biometric-quick-login-btn');
+    if (quickLoginBtn && state.savedAccount?.token) {
+      quickLoginBtn.onclick = async () => {
+        state.loginError = '';
+        state.loginSuccess = '';
+        state.isLoggingIn = true;
+        render();
+        try {
+          await verifyBrowserBiometricIfEnrolled();
+          state.token = state.savedAccount.token;
+          localStorage.setItem('bazmo_web_token', state.token);
+          state.hasSyncedOnce = false;
+          const cached = readCachedAppState(state.savedAccount.uid);
+          if (cached) {
+            state.session = cached.session;
+            state.db = cached.db;
+            state.province = cached.session.user?.province || state.province;
+            state.city = cached.session.user?.city || state.city;
+            state.region = cached.session.user?.region || state.region;
+            state.isLoggingIn = false;
+            render();
+            loadAppState(true);
+            return;
+          }
+          await loadAppState(false);
+        } catch (err) {
+          state.token = '';
+          localStorage.removeItem('bazmo_web_token');
+          state.loginError = err?.name === 'NotAllowedError'
+            ? 'احراز هویت اثر انگشت تایید نشد.'
+            : (err?.message || 'نشست ذخیره‌شده منقضی شده است. لطفاً با رمز عبور وارد شوید.');
+        } finally {
+          state.isLoggingIn = false;
+          render();
+        }
+      };
+    }
+    const forgetBtn = document.getElementById('forget-saved-account-btn');
+    if (forgetBtn) {
+      forgetBtn.onclick = () => {
+        logoutLocal(true);
+        state.loginEmail = '';
+        render();
+      };
+    }
     const form = document.getElementById('password-login-form');
     if (form) {
       form.onsubmit = async (e) => {
@@ -772,9 +982,11 @@
             body: { email: state.loginEmail, password: state.loginPassword }
           });
           state.token = data.token;
+          state.session = data;
           localStorage.setItem('bazmo_web_token', state.token);
+          saveAccountForQuickLogin(data, data.token);
           state.hasSyncedOnce = false;
-          await loadAppState(false);
+          await loadAppState(false, false, true);
         } catch (err) {
           state.loginError = err.message;
         } finally {
@@ -794,14 +1006,32 @@
   }
 
   function openRegistrationModal(prefill = null) {
-    let selProv = 'تهران';
-    let selCity = 'تهران';
-    const preEmail = prefill?.email || '';
-    const preName = prefill?.fullName || '';
+    const form = {
+      email: prefill?.email || '',
+      pass: '',
+      name: prefill?.fullName || '',
+      phone: '',
+      tier: ALL_ROLES[0],
+      prov: 'تهران',
+      city: 'تهران',
+      reg: 'همه مناطق',
+      note: ''
+    };
+    const syncDomToForm = () => {
+      const g = (id) => document.getElementById(id)?.value;
+      if (g('reg-email') !== undefined) form.email = g('reg-email');
+      if (g('reg-pass') !== undefined) form.pass = g('reg-pass');
+      if (g('reg-name') !== undefined) form.name = g('reg-name');
+      if (g('reg-phone') !== undefined) form.phone = g('reg-phone');
+      if (g('reg-tier') !== undefined) form.tier = g('reg-tier');
+      if (g('reg-note') !== undefined) form.note = g('reg-note');
+      if (g('reg-reg') !== undefined) form.reg = g('reg-reg');
+    };
     const draw = () => {
-      const cities = Object.keys(LOCATIONS[selProv] || {});
-      if (!cities.includes(selCity)) selCity = cities[0] || '';
-      const regions = LOCATIONS[selProv]?.[selCity] || ['همه مناطق'];
+      const cities = Object.keys(LOCATIONS[form.prov] || {});
+      if (!cities.includes(form.city)) form.city = cities[0] || '';
+      const regions = LOCATIONS[form.prov]?.[form.city] || ['همه مناطق'];
+      if (!regions.includes(form.reg)) form.reg = regions[0] || 'همه مناطق';
 
       showModal(`
         <h3 style="margin-top:0;">درخواست عضویت در بازمو</h3>
@@ -811,51 +1041,51 @@
             پس از ثبت درخواست عضویت، تیم پشتیبانی بازمو شماره تماس و اطلاعات صنفی شما را بررسی کرده و حساب شما را فعال می‌کند.
           </div>
         </div>
-        <div class="form-group">
-          <label class="form-label">ایمیل معتبر جهت ورود</label>
-          <input id="reg-email" class="input" type="email" dir="ltr" placeholder="name@example.com" value="${esc(preEmail)}" />
-        </div>
-        <div class="form-group">
-          <label class="form-label">رمز عبور انتخابی (جهت ورود پس از تایید، حداقل ۶ کاراکتر)</label>
-          <input id="reg-pass" class="input" type="password" dir="ltr" />
-        </div>
-        <div class="form-group">
-          <label class="form-label">نام و نام خانوادگی</label>
-          <input id="reg-name" class="input" placeholder="مثلاً: علی رضایی" value="${esc(preName)}" />
-        </div>
-        <div class="form-group">
-          <label class="form-label">شماره تماس / واتساپ</label>
-          <input id="reg-phone" class="input" dir="ltr" placeholder="0912..." />
-        </div>
-        <div class="form-group">
-          <label class="form-label">نقش صنفی درخواستی</label>
-          <select id="reg-tier" class="select">
-            ${ALL_ROLES.map((r) => `<option value="${esc(r)}">${esc(r)}</option>`).join('')}
-          </select>
-        </div>
         <div class="grid" style="grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;">
           <div>
             <label class="form-label">استان</label>
             <select id="reg-prov" class="select">
-              ${Object.keys(LOCATIONS).map((p) => `<option value="${esc(p)}" ${p === selProv ? 'selected' : ''}>${esc(p)}</option>`).join('')}
+              ${Object.keys(LOCATIONS).map((p) => `<option value="${esc(p)}" ${p === form.prov ? 'selected' : ''}>${esc(p)}</option>`).join('')}
             </select>
           </div>
           <div>
             <label class="form-label">شهر</label>
             <select id="reg-city" class="select">
-              ${cities.map((c) => `<option value="${esc(c)}" ${c === selCity ? 'selected' : ''}>${esc(c)}</option>`).join('')}
+              ${cities.map((c) => `<option value="${esc(c)}" ${c === form.city ? 'selected' : ''}>${esc(c)}</option>`).join('')}
             </select>
           </div>
           <div>
             <label class="form-label">منطقه</label>
             <select id="reg-reg" class="select">
-              ${regions.map((r) => `<option value="${esc(r)}">${esc(r)}</option>`).join('')}
+              ${regions.map((r) => `<option value="${esc(r)}" ${r === form.reg ? 'selected' : ''}>${esc(r)}</option>`).join('')}
             </select>
           </div>
         </div>
         <div class="form-group">
+          <label class="form-label">ایمیل معتبر جهت ورود</label>
+          <input id="reg-email" class="input" type="email" dir="ltr" placeholder="name@example.com" value="${esc(form.email)}" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">رمز عبور انتخابی (جهت ورود پس از تایید، حداقل ۶ کاراکتر)</label>
+          <input id="reg-pass" class="input" type="password" dir="ltr" value="${esc(form.pass)}" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">نام و نام خانوادگی</label>
+          <input id="reg-name" class="input" placeholder="مثلاً: علی رضایی" value="${esc(form.name)}" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">شماره تماس / واتساپ</label>
+          <input id="reg-phone" class="input" dir="ltr" placeholder="0912..." value="${esc(form.phone)}" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">نقش صنفی درخواستی</label>
+          <select id="reg-tier" class="select">
+            ${ALL_ROLES.map((r) => `<option value="${esc(r)}" ${r === form.tier ? 'selected' : ''}>${esc(r)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
           <label class="form-label">توضیحات / نام فروشگاه (اختیاری)</label>
-          <textarea id="reg-note" class="textarea" rows="2"></textarea>
+          <textarea id="reg-note" class="textarea" rows="2">${esc(form.note)}</textarea>
         </div>
         <div class="row space-between">
           <button type="button" class="btn btn-outline" onclick="window.__closeModal()">انصراف</button>
@@ -864,12 +1094,16 @@
       `);
 
       document.getElementById('reg-prov').onchange = (e) => {
-        selProv = e.target.value;
-        selCity = Object.keys(LOCATIONS[selProv] || {})[0] || '';
+        syncDomToForm();
+        form.prov = e.target.value;
+        form.city = Object.keys(LOCATIONS[form.prov] || {})[0] || '';
+        form.reg = 'همه مناطق';
         draw();
       };
       document.getElementById('reg-city').onchange = (e) => {
-        selCity = e.target.value;
+        syncDomToForm();
+        form.city = e.target.value;
+        form.reg = 'همه مناطق';
         draw();
       };
       document.getElementById('reg-submit').onclick = async () => {
@@ -901,9 +1135,11 @@
   function renderAccessGateScreen() {
     const st = state.session.status;
     const dark = isDarkTheme();
+    const isBlocked = st === 'inactive' || st === 'blocked';
+    const isUnregistered = st === 'not_registered' || st === 'not_invited';
     let title = 'حساب کاربری نیاز به تایید دارد';
     let body = 'حساب شما هنوز فعال‌سازی نشده است. می‌توانید درخواست عضویت بفرستید.';
-    if (st === 'inactive') {
+    if (isBlocked) {
       title = 'حساب کاربری غیرفعال است';
       body = 'دسترسی حساب شما توسط مدیر سیستم غیرفعال شده است. برای پیگیری با پشتیبانی تماس بگیرید.';
     }
@@ -920,7 +1156,7 @@
             <h2 style="margin-top:0;">${esc(title)}</h2>
             <p class="muted">${esc(state.session.email)}</p>
             <p>${esc(body)}</p>
-            ${st === 'not_registered' ? `
+            ${isUnregistered ? `
               <button id="gate-register-btn" class="btn btn-gold btn-block" style="margin-bottom:10px;">📝 ثبت درخواست عضویت و احراز هویت</button>
             ` : ''}
             <div class="row space-between">
@@ -1045,6 +1281,66 @@
     return '';
   }
 
+  // ==================== PROMOTIONAL BANNERS HELPER ====================
+
+  function compressImageFileToBase64(file, maxWidth = 960, quality = 0.82) {
+    return new Promise((resolve, reject) => {
+      if (!file) return reject(new Error('فایلی انتخاب نشده است.'));
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('خطا در خواندن فایل تصویر'));
+      reader.onload = () => {
+        const img = new Image();
+        img.onerror = () => reject(new Error('فرمت تصویر پشتیبانی نمی‌شود.'));
+        img.onload = () => {
+          const scale = img.width > maxWidth ? maxWidth / img.width : 1;
+          const w = Math.max(1, Math.round(img.width * scale));
+          const h = Math.max(1, Math.round(img.height * scale));
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, w, h);
+          const dataUrl = canvas.toDataURL('image/jpeg', quality);
+          const commaIdx = dataUrl.indexOf(',');
+          resolve({
+            imageMime: 'image/jpeg',
+            imageBase64: commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl,
+            previewUrl: dataUrl
+          });
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function renderPromoBanners(section) {
+    const banners = (state.db?.banners || [])
+      .filter((b) => b.section === section && b.hasImage)
+      .sort((a, b) => Number(a.slotIndex) - Number(b.slotIndex))
+      .slice(0, 4);
+    if (!banners.length) return '';
+    return `
+      <div class="promo-banner-grid">
+        ${banners.map((b) => {
+          const tagLabel = b.linkType === 'url' ? '🌐 لینک سایت' : b.linkType === 'store' ? '🏪 فروشگاه' : '';
+          const v = b.updatedAt ? `?v=${encodeURIComponent(b.updatedAt)}` : '';
+          return `
+            <button type="button" class="promo-banner-tile" data-promo-banner="${esc(b.id)}" aria-label="${esc(b.title || 'بنر تبلیغاتی')}">
+              <img class="promo-banner-img" src="/api/banners/${encodeURIComponent(b.id)}/image${v}" alt="${esc(b.title || 'بنر تبلیغاتی بازمو')}" loading="lazy" />
+              ${(b.title || tagLabel) ? `
+                <div class="promo-banner-overlay">
+                  <span class="promo-banner-title">${esc(b.title || 'پیشنهاد ویژه')}</span>
+                  ${tagLabel ? `<span class="promo-banner-tag">${tagLabel}</span>` : ''}
+                </div>
+              ` : ''}
+            </button>
+          `;
+        }).join('')}
+      </div>
+    `;
+  }
+
   // ==================== USER TABS: 0. MOBILE ====================
 
   function renderMobileTab() {
@@ -1112,6 +1408,8 @@
       <div class="chip-row">
         ${brands.map((b) => `<button class="chip ${state.mobileBrand === b ? 'active' : ''}" data-mbrand="${esc(b)}">${esc(b)}</button>`).join('')}
       </div>
+
+      ${renderPromoBanners('mobile')}
 
       <div class="section-header-title">
         <span>🏪 عمده‌فروشان و بنکداران (${esc(filteredStoresRes.scope)})</span>
@@ -1314,6 +1612,8 @@
         <button class="sub-tab" data-swsec="forum">${swAccess ? '💬 انجمن نرم‌افزار' : '🔒 انجمن نرم‌افزار'}</button>
       </div>
 
+      ${renderPromoBanners('software')}
+
       ${!swAccess && (state.swSection === 'home' || state.swSection === 'detail') ? `
         <div class="warn-box">
           <div style="font-size:15px;font-weight:900;">🔒 آموزش‌ها و انجمن تخصصی نرم‌افزار فقط برای نقش «نرم‌افزارکار» فعال است</div>
@@ -1487,6 +1787,8 @@
         ${cats.map((c) => `<button class="chip ${state.accCat === c ? 'active' : ''}" data-acat="${esc(c)}">${esc(c)}</button>`).join('')}
       </div>
 
+      ${renderPromoBanners('acc')}
+
       <div class="section-header-title">
         <span>🏪 پخش‌کنندگان و بنکداران جانبی (${esc(accStoresRes.scope)})</span>
         ${state.accFilterStoreId ? `<button id="acc-clear-store-filter" class="btn btn-outline btn-sm">نمایش همه فروشگاه‌ها</button>` : ''}
@@ -1634,6 +1936,8 @@
         <button class="sub-tab ${state.hwSection === 'special_req' ? 'active' : ''}" data-hwsec="special_req">درخواست قطعه</button>
         <button class="sub-tab" data-hwsec="forum">💬 انجمن سخت‌افزار</button>
       </div>
+
+      ${renderPromoBanners('hw')}
 
       ${state.hwSection === 'home' ? `
         <div class="row space-between" style="margin-bottom:10px;">
@@ -1921,24 +2225,38 @@
     const pendingAds = ads.filter((a) => a.status === 'pending');
     const tuts = db.tutorials || [];
     const boxes = db.boxes || [];
+    const stores = db.stores || [];
+    const deskRentals = db.deskRentals || [];
     const orders = db.orders || [];
+    const banners = db.banners || [];
     const revenue = orders.reduce((s, o) => s + Number(o.total || 0), 0);
 
     if (state.adminTab === 'dashboard') {
       const demoVisible = db.showDemoData !== false;
-      const pendingStoresCount = (db.stores || []).filter((s) => s.status === 'pending').length;
-      const pendingDesksCount = (db.deskRentals || []).filter((d) => d.status === 'pending').length;
+      const pendingStoresCount = stores.filter((s) => s.status === 'pending').length;
+      const pendingDesksCount = deskRentals.filter((d) => d.status === 'pending').length;
+      const pendingTutsCount = tuts.filter((t) => t.status === 'pending').length;
+      const pendingBoxesCount = boxes.filter((b) => b.status === 'pending').length;
+      const totalPendingContent = pendingAds.length + pendingStoresCount + pendingDesksCount + pendingTutsCount + pendingBoxesCount;
+
       return `
-        <div class="stat-card" style="background:linear-gradient(135deg,#0f172a,#1e3a5f);color:#fff;margin-bottom:12px;">
-          <div style="font-size:12px;color:#bfdbfe;">مجموع ارزش گردش سفارش‌های بازمو</div>
-          <div style="font-size:26px;font-weight:900;margin-top:4px;">${formatToman(revenue)}</div>
+        <div class="admin-dash-hero">
+          <div class="row space-between" style="align-items:flex-start;">
+            <div>
+              <div style="font-size:12px;color:#BAE6FD;font-weight:700;">داشبورد هوشمند مدیریت بازمو</div>
+              <div style="font-size:26px;font-weight:900;margin-top:4px;">${formatToman(revenue)}</div>
+              <div style="font-size:11.5px;color:#E0F2FE;margin-top:4px;">مجموع گردش مالی ثبت‌شده در ${toPersianNum(orders.length)} سفارش</div>
+            </div>
+            <button type="button" class="btn btn-gold btn-sm" data-goto-atab="ads" data-goto-adsec="banners">🖼️ مدیریت بنرهای تبلیغاتی</button>
+          </div>
         </div>
+
         <div class="demo-toggle-card">
           <div class="row space-between">
             <div style="flex:1;min-width:200px;">
               <strong style="color:var(--navy-deep);">نمایش داده‌های نمونه کل ایران (موقت)</strong>
               <div class="muted" style="margin-top:3px;">
-                اطلاعات واقعی ثبت‌شده توسط کاربران و مدیر همیشه حفظ می‌شوند. با این دکمه فقط داده‌های نمونه برای دمو نمایش داده یا مخفی می‌شوند.
+                اطلاعات واقعی کاربران و مدیر همیشه حفظ می‌شوند. با این دکمه فقط داده‌های نمونه دمو نمایش داده یا مخفی می‌شوند.
               </div>
             </div>
             <div class="row">
@@ -1951,21 +2269,82 @@
             </div>
           </div>
         </div>
-        <div class="grid" style="margin-bottom:14px;">
-          <div class="stat-card"><div class="muted">کل کاربران سیستم</div><div class="stat-num">${toPersianNum(users.length)}</div></div>
-          <div class="stat-card"><div class="muted">درخواست‌های عضویت منتظر</div><div class="stat-num" style="color:var(--gold);">${toPersianNum(pendingRegs.length)}</div></div>
-          <div class="stat-card"><div class="muted">آگهی و فروشگاه منتظر تایید</div><div class="stat-num" style="color:var(--danger);">${toPersianNum(pendingAds.length + pendingStoresCount + pendingDesksCount)}</div></div>
-          <div class="stat-card"><div class="muted">کل سفارش‌ها</div><div class="stat-num">${toPersianNum(orders.length)}</div></div>
-          <div class="stat-card"><div class="muted">فروشگاه‌ها و بنکداران</div><div class="stat-num">${toPersianNum((db.stores || []).length)}</div></div>
-          <div class="stat-card"><div class="muted">میزهای کار و درخواست‌ها</div><div class="stat-num">${toPersianNum((db.deskRentals || []).length + (db.deskRequests || []).length)}</div></div>
+
+        <div class="admin-dash-grid">
+          <button type="button" class="admin-dash-tile" data-goto-atab="users" data-goto-user-sub="users">
+            <div class="admin-dash-tile-top">
+              <span class="admin-dash-icon">👥</span>
+              <span class="badge badge-blue">مشاهده همه ←</span>
+            </div>
+            <div>
+              <div class="muted">کل کاربران سیستم</div>
+              <div class="stat-num">${toPersianNum(users.length)}</div>
+            </div>
+          </button>
+
+          <button type="button" class="admin-dash-tile" data-goto-atab="users" data-goto-user-sub="requests">
+            <div class="admin-dash-tile-top">
+              <span class="admin-dash-icon" style="background:var(--gold-soft);color:var(--gold-text);">📝</span>
+              <span class="badge ${pendingRegs.length ? 'badge-gold' : 'badge-green'}">${pendingRegs.length ? 'نیاز به بررسی ←' : 'به‌روز'}</span>
+            </div>
+            <div>
+              <div class="muted">درخواست‌های عضویت منتظر</div>
+              <div class="stat-num" style="color:var(--gold);">${toPersianNum(pendingRegs.length)}</div>
+            </div>
+          </button>
+
+          <button type="button" class="admin-dash-tile" data-goto-atab="ads" data-goto-adsec="hw">
+            <div class="admin-dash-tile-top">
+              <span class="admin-dash-icon" style="background:#FEF2F2;color:var(--danger);">📢</span>
+              <span class="badge ${totalPendingContent ? 'badge-red' : 'badge-green'}">${totalPendingContent ? 'بررسی کاشی‌ها ←' : 'همه تاییدشده'}</span>
+            </div>
+            <div>
+              <div class="muted">آگهی، فروشگاه و میز منتظر</div>
+              <div class="stat-num" style="color:var(--danger);">${toPersianNum(totalPendingContent)}</div>
+            </div>
+          </button>
+
+          <button type="button" class="admin-dash-tile" data-goto-atab="requests">
+            <div class="admin-dash-tile-top">
+              <span class="admin-dash-icon">📦</span>
+              <span class="badge badge-blue">پیگیری ←</span>
+            </div>
+            <div>
+              <div class="muted">کل سفارش‌ها و استعلام‌ها</div>
+              <div class="stat-num">${toPersianNum(orders.length)}</div>
+            </div>
+          </button>
+
+          <button type="button" class="admin-dash-tile" data-goto-atab="ads" data-goto-adsec="stores">
+            <div class="admin-dash-tile-top">
+              <span class="admin-dash-icon">🏪</span>
+              <span class="badge ${pendingStoresCount ? 'badge-gold' : 'badge-blue'}">${pendingStoresCount ? `${toPersianNum(pendingStoresCount)} منتظر ←` : 'مدیریت ←'}</span>
+            </div>
+            <div>
+              <div class="muted">فروشگاه‌ها و بنکداران</div>
+              <div class="stat-num">${toPersianNum(stores.length)}</div>
+            </div>
+          </button>
+
+          <button type="button" class="admin-dash-tile" data-goto-atab="ads" data-goto-adsec="desks">
+            <div class="admin-dash-tile-top">
+              <span class="admin-dash-icon">🪑</span>
+              <span class="badge ${pendingDesksCount ? 'badge-gold' : 'badge-blue'}">${pendingDesksCount ? `${toPersianNum(pendingDesksCount)} منتظر ←` : 'مشاهده ←'}</span>
+            </div>
+            <div>
+              <div class="muted">میزهای کار و همکاری</div>
+              <div class="stat-num">${toPersianNum(deskRentals.length + (db.deskRequests || []).length)}</div>
+            </div>
+          </button>
         </div>
+
         <div class="card">
-          <h4 style="margin-top:0;">دسترسی سریع مدیریت</h4>
+          <h4 style="margin-top:0;">دسترسی سریع عملیات مدیریت</h4>
           <div class="row">
-            <button class="btn btn-primary btn-sm" data-goto-atab="users">👥 بررسی کاربران (${toPersianNum(pendingRegs.length)} منتظر)</button>
+            <button class="btn btn-primary btn-sm" data-goto-atab="users" data-goto-user-sub="requests">📝 درخواست‌های عضویت (${toPersianNum(pendingRegs.length)})</button>
             <button class="btn btn-gold btn-sm" data-goto-atab="notifs">🔔 ارسال اعلان منطقه‌ای</button>
-            <button class="btn btn-navy btn-sm" data-goto-atab="ads">📢 تایید آگهی/فروشگاه/میز (${toPersianNum(pendingAds.length + pendingStoresCount + pendingDesksCount)})</button>
-            <button class="btn btn-outline btn-sm" data-goto-atab="requests">📦 پیگیری سفارش‌ها</button>
+            <button class="btn btn-navy btn-sm" data-goto-atab="ads" data-goto-adsec="banners">🖼️ ۴ بنر تبلیغاتی</button>
+            <button class="btn btn-outline btn-sm" data-goto-atab="catalog">⚙️ کاتالوگ و انجمن‌ها</button>
           </div>
         </div>
       `;
@@ -1974,81 +2353,103 @@
     if (state.adminTab === 'users') {
       const q = state.adminUserSearch.trim().toLowerCase();
       const filteredUsers = users.filter((u) => {
-        const searchOk = !q || u.fullName.toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q) || (u.phone || '').includes(q);
-        const tierOk = isAllScope(state.adminUserTier) || u.tier === state.adminUserTier;
-        const stOk = state.adminUserStatus === 'all' || (state.adminUserStatus === 'active' && u.active) || (state.adminUserStatus === 'blocked' && !u.active);
+        const searchOk = !q || (u.fullName || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q) || (u.phone || '').includes(q);
+        const tierOk = isAllScope(state.adminUserTier) || normalizeZwnj(u.tier) === normalizeZwnj(state.adminUserTier);
+        const stOk = state.adminUserStatus === 'all' || (state.adminUserStatus === 'active' && u.active !== false) || (state.adminUserStatus === 'blocked' && u.active === false);
         const provOk = isAllScope(state.adminUserProvince) || normalizeZwnj(u.province) === normalizeZwnj(state.adminUserProvince);
         return searchOk && tierOk && stOk && provOk;
       });
+      const sortedReqs = [...reqs].sort((a, b) => {
+        if (a.status === 'pending' && b.status !== 'pending') return -1;
+        if (b.status === 'pending' && a.status !== 'pending') return 1;
+        return Number(b.createdAtMs || 0) - Number(a.createdAtMs || 0);
+      });
 
       return `
-        ${pendingRegs.length ? `
-          <div class="card pending-reg-card">
-            <h4 style="margin-top:0;">درخواست‌های عضویت در انتظار تایید (${toPersianNum(pendingRegs.length)})</h4>
-            ${pendingRegs.map((r) => `
-              <div class="card" style="margin-bottom:8px;">
+        <div class="sub-tabs" style="margin-bottom:12px;">
+          <button type="button" class="sub-tab ${state.adminUserSubTab === 'users' ? 'active' : ''}" data-au-sub="users">
+            👥 کاربران سیستم (${toPersianNum(users.length)})
+          </button>
+          <button type="button" class="sub-tab ${state.adminUserSubTab === 'requests' ? 'active' : ''}" data-au-sub="requests">
+            📝 درخواست‌های عضویت (${toPersianNum(pendingRegs.length)} در انتظار / ${toPersianNum(reqs.length)} کل)
+          </button>
+        </div>
+
+        ${state.adminUserSubTab === 'requests' ? `
+          <div class="section-header-title">
+            <span>📝 درخواست‌های عضویت همکاران</span>
+            <button id="au-add-btn" class="btn btn-primary btn-sm">+ ثبت مستقیم کاربر جدید</button>
+          </div>
+          <div class="grid">
+            ${sortedReqs.map((r) => `
+              <div class="card ${r.status === 'pending' ? 'pending-reg-card' : ''}" style="margin-bottom:0;">
                 <div class="row space-between">
-                  <div>
-                    <strong>${esc(r.fullName)}</strong>
-                    <div class="muted">${esc(r.email)} · ${esc(r.phone)}</div>
-                    <div class="muted">${esc(r.province)} - ${esc(r.city)} (${esc(r.region)})</div>
-                  </div>
-                  <div class="row">
-                    <select class="select" style="width:auto;" id="reg-tier-${esc(r.id)}">
-                      ${ALL_ROLES.map((role) => `<option value="${esc(role)}" ${role === r.requestedTier ? 'selected' : ''}>${esc(role)}</option>`).join('')}
+                  <strong>${esc(r.fullName || 'بدون نام')}</strong>
+                  <span class="badge ${r.status === 'pending' ? 'badge-gold' : r.status === 'approved' ? 'badge-green' : 'badge-red'}">
+                    ${r.status === 'pending' ? '⏳ در انتظار تایید' : r.status === 'approved' ? '✓ تاییدشده' : '✕ ردشده'}
+                  </span>
+                </div>
+                <div class="muted" style="margin-top:4px;">${esc(r.email)} · ${esc(r.phone || '-')}</div>
+                <div class="muted">📍 ${esc(r.province)} - ${esc(r.city)} (${esc(r.region || 'همه مناطق')})</div>
+                ${r.note ? `<div class="muted" style="margin-top:4px;">توضیح: ${esc(r.note)}</div>` : ''}
+                ${r.status === 'pending' ? `
+                  <div class="row" style="margin-top:10px;">
+                    <select class="select" style="flex:1;min-width:140px;" id="reg-tier-${esc(r.id)}">
+                      ${ALL_ROLES.map((role) => `<option value="${esc(role)}" ${normalizeZwnj(role) === normalizeZwnj(r.requestedTier) ? 'selected' : ''}>${esc(role)}</option>`).join('')}
                     </select>
                     <button class="btn btn-success btn-sm" data-approve-reg="${esc(r.id)}">✓ تایید</button>
                     <button class="btn btn-danger btn-sm" data-reject-reg="${esc(r.id)}">✕ رد</button>
                   </div>
-                </div>
+                ` : `<div class="muted" style="margin-top:8px;">نقش درخواستی: ${esc(r.requestedTier || '-')}</div>`}
               </div>
-            `).join('')}
+            `).join('') || '<div class="card muted">درخواست عضویتی ثبت نشده است.</div>'}
           </div>
-        ` : ''}
-
-        <div class="row space-between" style="margin-bottom:10px;">
-          <input id="au-search" class="input toolbar-search" placeholder="جستجو بر اساس نام، ایمیل یا تلفن..." value="${esc(state.adminUserSearch)}" />
-          <div class="row">
-            <select id="au-tier" class="select" style="width:auto;">
-              <option value="همه نقش‌ها">همه نقش‌ها</option>
-              ${ALL_ROLES.map((r) => `<option value="${esc(r)}" ${state.adminUserTier === r ? 'selected' : ''}>${esc(r)}</option>`).join('')}
-            </select>
-            <select id="au-status" class="select" style="width:auto;">
-              <option value="all" ${state.adminUserStatus === 'all' ? 'selected' : ''}>همه وضعیت‌ها</option>
-              <option value="active" ${state.adminUserStatus === 'active' ? 'selected' : ''}>فعال</option>
-              <option value="blocked" ${state.adminUserStatus === 'blocked' ? 'selected' : ''}>مسدود</option>
-            </select>
-            <select id="au-prov" class="select" style="width:auto;">
-              <option value="همه استان‌ها" ${state.adminUserProvince === 'همه استان‌ها' ? 'selected' : ''}>همه استان‌ها</option>
-              <option value="همه کشور" ${state.adminUserProvince === 'همه کشور' ? 'selected' : ''}>همه کشور</option>
-              ${Object.keys(LOCATIONS).map((p) => `<option value="${esc(p)}" ${state.adminUserProvince === p ? 'selected' : ''}>${esc(p)}</option>`).join('')}
-            </select>
-            <button id="au-add-btn" class="btn btn-primary btn-sm">+ افزودن / ویرایش کاربر</button>
-          </div>
-        </div>
-
-        <div class="grid">
-          ${filteredUsers.map((u) => `
-            <div class="card">
-              <div class="row space-between">
-                <strong>${esc(u.fullName)}</strong>
-                <span class="badge ${u.active ? 'badge-green' : 'badge-red'}">${u.active ? 'فعال' : 'مسدود'}</span>
-              </div>
-              <div class="muted">${esc(u.email)} · ${esc(u.phone)}</div>
-              <div class="muted">${esc(u.province)} - ${esc(u.city)} (${esc(u.region)})</div>
-              <div class="row space-between" style="margin-top:10px;">
-                <select class="select" style="width:auto;" data-change-tier="${esc(u.id)}" data-email="${esc(u.email)}">
-                  ${ALL_ROLES.map((r) => `<option value="${esc(r)}" ${u.tier === r ? 'selected' : ''}>${esc(r)}</option>`).join('')}
-                </select>
-                <div class="row">
-                  <button class="btn btn-outline btn-sm" data-set-pass="${esc(u.id)}" data-email="${esc(u.email)}">🔑 رمز وب</button>
-                  <button class="btn ${u.active ? 'btn-danger' : 'btn-success'} btn-sm" data-toggle-active="${esc(u.id)}" data-next="${!u.active}">${u.active ? 'مسدود' : 'فعال'}</button>
-                  <button class="btn btn-outline btn-sm" data-del-user="${esc(u.id)}" data-email="${esc(u.email)}">حذف</button>
-                </div>
-              </div>
+        ` : `
+          <div class="row space-between" style="margin-bottom:10px;">
+            <input id="au-search" class="input toolbar-search" placeholder="جستجو بر اساس نام، ایمیل یا تلفن..." value="${esc(state.adminUserSearch)}" />
+            <div class="row">
+              <select id="au-tier" class="select" style="width:auto;">
+                <option value="همه نقش‌ها">همه نقش‌ها</option>
+                ${ALL_ROLES.map((r) => `<option value="${esc(r)}" ${state.adminUserTier === r ? 'selected' : ''}>${esc(r)}</option>`).join('')}
+              </select>
+              <select id="au-status" class="select" style="width:auto;">
+                <option value="all" ${state.adminUserStatus === 'all' ? 'selected' : ''}>همه وضعیت‌ها</option>
+                <option value="active" ${state.adminUserStatus === 'active' ? 'selected' : ''}>فعال</option>
+                <option value="blocked" ${state.adminUserStatus === 'blocked' ? 'selected' : ''}>مسدود</option>
+              </select>
+              <select id="au-prov" class="select" style="width:auto;">
+                <option value="همه استان‌ها" ${state.adminUserProvince === 'همه استان‌ها' ? 'selected' : ''}>همه استان‌ها</option>
+                <option value="همه کشور" ${state.adminUserProvince === 'همه کشور' ? 'selected' : ''}>همه کشور</option>
+                ${Object.keys(LOCATIONS).map((p) => `<option value="${esc(p)}" ${state.adminUserProvince === p ? 'selected' : ''}>${esc(p)}</option>`).join('')}
+              </select>
+              <button id="au-add-btn" class="btn btn-primary btn-sm">+ افزودن / ویرایش کاربر</button>
             </div>
-          `).join('')}
-        </div>
+          </div>
+
+          <div class="grid">
+            ${filteredUsers.map((u) => `
+              <div class="card">
+                <div class="row space-between">
+                  <strong>${esc(u.fullName || 'بدون نام')}</strong>
+                  <span class="badge ${u.active !== false ? 'badge-green' : 'badge-red'}">${u.active !== false ? 'فعال' : 'مسدود'}</span>
+                </div>
+                <div class="muted">${esc(u.email)} · ${esc(u.phone || '-')}</div>
+                <div class="muted">📍 ${esc(u.province || 'تهران')} - ${esc(u.city || 'تهران')} (${esc(u.region || 'همه مناطق')})</div>
+                <div class="row space-between" style="margin-top:10px;">
+                  <select class="select" style="width:auto;" data-change-tier="${esc(u.id)}" data-email="${esc(u.email)}">
+                    ${ALL_ROLES.map((r) => `<option value="${esc(r)}" ${normalizeZwnj(u.tier) === normalizeZwnj(r) ? 'selected' : ''}>${esc(r)}</option>`).join('')}
+                  </select>
+                  <div class="row">
+                    <button class="btn btn-outline btn-sm" data-edit-user-loc="${esc(u.id)}">📍 آدرس</button>
+                    <button class="btn btn-outline btn-sm" data-set-pass="${esc(u.id)}" data-email="${esc(u.email)}">🔑 رمز وب</button>
+                    <button class="btn ${u.active !== false ? 'btn-danger' : 'btn-success'} btn-sm" data-toggle-active="${esc(u.id)}" data-next="${u.active === false}">${u.active !== false ? 'مسدود' : 'فعال'}</button>
+                    <button class="btn btn-outline btn-sm" data-del-user="${esc(u.id)}" data-email="${esc(u.email)}">حذف</button>
+                  </div>
+                </div>
+              </div>
+            `).join('') || '<div class="card muted">کاربری با فیلتر انتخاب‌شده یافت نشد.</div>'}
+          </div>
+        `}
       `;
     }
 
@@ -2114,96 +2515,248 @@
     }
 
     if (state.adminTab === 'ads') {
+      const hwSectionAds = ads.filter((a) => !a.section || a.section === 'hw');
+      const mobileSectionAds = ads.filter((a) => a.section === 'mobile');
+      const accSectionAds = ads.filter((a) => a.section === 'acc');
+
+      const tileDefs = [
+        { id: 'hw', icon: '🔧', label: 'آگهی‌های سخت‌افزار', total: hwSectionAds.length, pending: hwSectionAds.filter((a) => a.status === 'pending').length },
+        { id: 'mobile', icon: '📱', label: 'آگهی‌های موبایل', total: mobileSectionAds.length, pending: mobileSectionAds.filter((a) => a.status === 'pending').length },
+        { id: 'acc', icon: '🎧', label: 'آگهی‌های جانبی', total: accSectionAds.length, pending: accSectionAds.filter((a) => a.status === 'pending').length },
+        { id: 'stores', icon: '🏪', label: 'فروشگاه‌ها', total: stores.length, pending: stores.filter((s) => s.status === 'pending').length },
+        { id: 'desks', icon: '🪑', label: 'میز کار و همکاری', total: deskRentals.length, pending: deskRentals.filter((d) => d.status === 'pending').length },
+        { id: 'tutorials', icon: '🎓', label: 'آموزش‌ها', total: tuts.length, pending: tuts.filter((t) => t.status === 'pending').length },
+        { id: 'boxes', icon: '🧰', label: 'باکس و دانگل', total: boxes.length, pending: boxes.filter((b) => b.status === 'pending').length },
+        { id: 'banners', icon: '🖼️', label: '۴ بنر تبلیغاتی', total: banners.filter((b) => b.hasImage).length, pending: 0, isBannerTile: true }
+      ];
+
+      const renderStatusBadge = (st) => {
+        if (st === 'approved') return '<span class="badge badge-green">تاییدشده</span>';
+        if (st === 'rejected') return '<span class="badge badge-red">ردشده</span>';
+        return '<span class="badge badge-gold">در انتظار تایید</span>';
+      };
+
+      let sectionBodyHtml = '';
+      if (state.adminAdsTile === 'banners') {
+        const secLabels = [
+          { id: 'mobile', label: '📱 بخش موبایل' },
+          { id: 'software', label: '💻 بخش نرم‌افزار' },
+          { id: 'acc', label: '🎧 بخش جانبی' },
+          { id: 'hw', label: '🔧 بخش سخت‌افزار' }
+        ];
+        const curSec = state.adminBannerSection || 'mobile';
+        const approvedStores = stores.filter((s) => s.status === 'approved');
+        sectionBodyHtml = `
+          <div class="section-header-title">
+            <span>🖼️ مدیریت ۴ کاشی بنر تبلیغاتی هر بخش</span>
+            <span class="muted">با کلیک کاربر روی بنر به سایت یا فروشگاه هدف هدایت می‌شود</span>
+          </div>
+          <div class="sub-tabs" style="margin-bottom:12px;">
+            ${secLabels.map((s) => `<button type="button" class="sub-tab ${curSec === s.id ? 'active' : ''}" data-banner-sec="${esc(s.id)}">${esc(s.label)}</button>`).join('')}
+          </div>
+          <div class="grid">
+            ${[0, 1, 2, 3].map((slotIdx) => {
+              const existing = banners.find((b) => b.section === curSec && Number(b.slotIndex) === slotIdx);
+              const lType = existing?.linkType || 'none';
+              return `
+                <div class="card">
+                  <div class="row space-between" style="margin-bottom:8px;">
+                    <strong>بنر شماره ${toPersianNum(slotIdx + 1)}</strong>
+                    ${existing?.hasImage ? `<span class="badge badge-green">تصویر فعال</span>` : `<span class="badge badge-gold">خالی</span>`}
+                  </div>
+                  ${existing?.hasImage ? `
+                    <img src="/api/banners/${encodeURIComponent(existing.id)}/image?v=${encodeURIComponent(existing.updatedAt || 0)}"
+                         alt="پیش‌نمایش بنر ${slotIdx + 1}"
+                         style="width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:12px;margin-bottom:8px;border:1px solid var(--border);" />
+                  ` : ''}
+                  <div class="form-group">
+                    <label class="form-label">انتخاب تصویر جدید (PNG / JPG / WebP)</label>
+                    <input type="file" accept="image/*" class="input" data-banner-file="${slotIdx}" id="banner-file-${slotIdx}" />
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">عنوان روی کاشی (اختیاری)</label>
+                    <input id="banner-title-${slotIdx}" class="input" placeholder="مثلاً جشنواره تعویض ال‌سی‌دی..." value="${esc(existing?.title || '')}" />
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">عملیات هنگام کلیک روی بنر</label>
+                    <select id="banner-linktype-${slotIdx}" class="select" data-banner-linktype="${slotIdx}">
+                      <option value="none" ${lType === 'none' ? 'selected' : ''}>فقط نمایش بنر (بدون لینک)</option>
+                      <option value="url" ${lType === 'url' ? 'selected' : ''}>لینک به سایت / صفحه وب خارجی</option>
+                      <option value="store" ${lType === 'store' ? 'selected' : ''}>لینک به فروشگاه داخلی داخل بازمو</option>
+                    </select>
+                  </div>
+                  <div class="form-group" id="banner-url-wrap-${slotIdx}" style="display:${lType === 'url' ? 'block' : 'none'};">
+                    <label class="form-label">آدرس سایت (https://...)</label>
+                    <input id="banner-url-${slotIdx}" class="input" dir="ltr" placeholder="https://example.com" value="${lType === 'url' ? esc(existing?.linkTarget || '') : ''}" />
+                  </div>
+                  <div class="form-group" id="banner-store-wrap-${slotIdx}" style="display:${lType === 'store' ? 'block' : 'none'};">
+                    <label class="form-label">انتخاب فروشگاه هدف در بازمو</label>
+                    <select id="banner-store-${slotIdx}" class="select">
+                      <option value="">-- انتخاب فروشگاه --</option>
+                      ${approvedStores.map((st) => `<option value="${esc(st.id)}" ${lType === 'store' && existing?.linkTarget === st.id ? 'selected' : ''}>${esc(st.name)} (${esc(st.city)})</option>`).join('')}
+                    </select>
+                  </div>
+                  <div class="row space-between">
+                    ${existing ? `<button type="button" class="btn btn-danger btn-sm" data-del-banner="${esc(existing.id)}">حذف بنر</button>` : '<span></span>'}
+                    <button type="button" class="btn btn-primary btn-sm" data-save-banner="${slotIdx}">💾 ذخیره بنر</button>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        `;
+      } else {
+        const q = state.adminAdsSearch.trim().toLowerCase();
+        const stFilter = state.adminAdsFilter || 'all';
+        let sourceList = [];
+        if (state.adminAdsTile === 'hw') sourceList = hwSectionAds;
+        else if (state.adminAdsTile === 'mobile') sourceList = mobileSectionAds;
+        else if (state.adminAdsTile === 'acc') sourceList = accSectionAds;
+        else if (state.adminAdsTile === 'stores') sourceList = stores;
+        else if (state.adminAdsTile === 'desks') sourceList = deskRentals;
+        else if (state.adminAdsTile === 'tutorials') sourceList = tuts;
+        else if (state.adminAdsTile === 'boxes') sourceList = boxes;
+
+        const filteredList = sourceList.filter((item) => {
+          if (stFilter === 'pending' && item.status !== 'pending') return false;
+          if (!q) return true;
+          const hay = [item.title, item.name, item.seller, item.teacher, item.city, item.cat, item.storeName, item.phone].filter(Boolean).join(' ').toLowerCase();
+          return hay.includes(q);
+        });
+        const sortedList = [...filteredList].sort((a, b) => {
+          if (a.status === 'pending' && b.status !== 'pending') return -1;
+          if (b.status === 'pending' && a.status !== 'pending') return 1;
+          return Number(b.createdAtMs || 0) - Number(a.createdAtMs || 0);
+        });
+        const RECENT_LIMIT = 8;
+        const visibleList = state.adminAdsShowAll ? sortedList : sortedList.slice(0, RECENT_LIMIT);
+        const curTileDef = tileDefs.find((t) => t.id === state.adminAdsTile) || tileDefs[0];
+
+        sectionBodyHtml = `
+          <div class="section-header-title">
+            <span>${curTileDef.icon} ${esc(curTileDef.label)} (${toPersianNum(filteredList.length)} مورد)</span>
+            ${state.adminAdsTile === 'stores' ? `<button id="admin-add-store-btn" class="btn btn-primary btn-sm">+ ثبت فروشگاه جدید</button>` : ''}
+          </div>
+          <div class="row space-between" style="margin-bottom:10px;">
+            <input id="admin-ads-search" class="input toolbar-search" placeholder="جستجو در عنوان، فروشنده، شهر یا دسته‌بندی..." value="${esc(state.adminAdsSearch)}" />
+            <div class="row">
+              <button type="button" class="chip ${stFilter === 'all' ? 'active' : ''}" data-ad-filter="all">همه (${toPersianNum(sourceList.length)})</button>
+              <button type="button" class="chip ${stFilter === 'pending' ? 'active' : ''}" data-ad-filter="pending">در انتظار (${toPersianNum(sourceList.filter((x) => x.status === 'pending').length)})</button>
+            </div>
+          </div>
+
+          <div class="grid" style="margin-bottom:12px;">
+            ${visibleList.map((item) => {
+              if (state.adminAdsTile === 'stores') {
+                return `
+                  <div class="card">
+                    <div class="row space-between">
+                      <strong>${esc(item.name)}</strong>
+                      ${renderStatusBadge(item.status)}
+                    </div>
+                    <div class="muted">${esc(item.province)} · ${esc(item.city)} (${esc(item.region)}) · ${esc(storeTypeLabel(item.type))}</div>
+                    <div class="muted">${esc(item.phone)} · ساعات: ${esc(item.hours)}</div>
+                    <div class="row" style="margin-top:8px;">
+                      ${item.status !== 'approved' ? `<button class="btn btn-success btn-sm" data-store-status="${esc(item.id)}:approved">✓ تایید فروشگاه</button>` : ''}
+                      ${item.status !== 'rejected' ? `<button class="btn btn-gold btn-sm" data-store-status="${esc(item.id)}:rejected">✕ رد</button>` : ''}
+                      <button class="btn btn-danger btn-sm" data-del-store="${esc(item.id)}">حذف</button>
+                    </div>
+                  </div>
+                `;
+              }
+              if (state.adminAdsTile === 'desks') {
+                return `
+                  <div class="card">
+                    <div class="row space-between">
+                      <span class="badge badge-blue">${esc(item.category)}</span>
+                      ${renderStatusBadge(item.status)}
+                    </div>
+                    <h4 style="margin:6px 0 4px;">${esc(item.title)}</h4>
+                    <div class="muted">${esc(item.storeName)} · ${esc(item.city)} (${esc(item.region)})</div>
+                    <div class="row" style="margin-top:8px;">
+                      ${item.status !== 'approved' ? `<button class="btn btn-success btn-sm" data-desk-status="${esc(item.id)}:approved">✓ تایید میز</button>` : ''}
+                      ${item.status !== 'rejected' ? `<button class="btn btn-gold btn-sm" data-desk-status="${esc(item.id)}:rejected">✕ رد</button>` : ''}
+                      <button class="btn btn-danger btn-sm" data-del-desk-rental="${esc(item.id)}">حذف</button>
+                    </div>
+                  </div>
+                `;
+              }
+              if (state.adminAdsTile === 'tutorials') {
+                return `
+                  <div class="card">
+                    <div class="row space-between">
+                      <strong>آموزش: ${esc(item.title)}</strong>
+                      ${renderStatusBadge(item.status)}
+                    </div>
+                    <div class="muted">${esc(item.teacher)} · ${formatToman(item.price)}</div>
+                    <div class="row" style="margin-top:8px;">
+                      ${item.status !== 'approved' ? `<button class="btn btn-success btn-sm" data-app-tut="${esc(item.id)}">✓ تایید</button>` : ''}
+                      <button class="btn btn-danger btn-sm" data-del-tut="${esc(item.id)}">حذف</button>
+                    </div>
+                  </div>
+                `;
+              }
+              if (state.adminAdsTile === 'boxes') {
+                return `
+                  <div class="card">
+                    <div class="row space-between">
+                      <strong>باکس: ${esc(item.name)}</strong>
+                      ${renderStatusBadge(item.status)}
+                    </div>
+                    <div class="muted">${esc(item.seller)} · ${formatToman(item.price)}</div>
+                    <div class="row" style="margin-top:8px;">
+                      ${item.status !== 'approved' ? `<button class="btn btn-success btn-sm" data-app-box="${esc(item.id)}">✓ تایید</button>` : ''}
+                      <button class="btn btn-danger btn-sm" data-del-box="${esc(item.id)}">حذف</button>
+                    </div>
+                  </div>
+                `;
+              }
+              return `
+                <div class="card">
+                  <div class="row space-between">
+                    <span class="badge badge-blue">${esc(item.cat)}</span>
+                    ${renderStatusBadge(item.status)}
+                  </div>
+                  <h4 style="margin:8px 0 4px;">${esc(item.title)}</h4>
+                  <div class="muted">${esc(item.seller)} · ${esc(item.city)} · ${formatToman(item.price)}</div>
+                  <div class="row" style="margin-top:8px;">
+                    ${item.status !== 'approved' ? `<button class="btn btn-success btn-sm" data-hw-status="${esc(item.id)}:approved">✓ تایید</button>` : ''}
+                    ${item.status !== 'rejected' ? `<button class="btn btn-gold btn-sm" data-hw-status="${esc(item.id)}:rejected">✕ رد</button>` : ''}
+                    <button class="btn btn-danger btn-sm" data-del-hw="${esc(item.id)}">حذف</button>
+                  </div>
+                </div>
+              `;
+            }).join('') || '<div class="card muted">موردی در این بخش یافت نشد.</div>'}
+          </div>
+
+          ${filteredList.length > RECENT_LIMIT ? `
+            <div style="text-align:center;">
+              <button type="button" id="admin-ads-show-all-btn" class="btn btn-outline btn-sm">
+                ${state.adminAdsShowAll ? `نمایش فقط ${toPersianNum(RECENT_LIMIT)} مورد اخیر` : `نمایش همه (${toPersianNum(filteredList.length)} مورد)`}
+              </button>
+            </div>
+          ` : ''}
+        `;
+      }
+
       return `
-        <div class="section-header-title"><span>📢 مدیریت آگهی‌های سخت‌افزار، موبایل و جانبی</span></div>
-        <div class="grid" style="margin-bottom:14px;">
-          ${ads.map((a) => `
-            <div class="card">
-              <div class="row space-between">
-                <span class="badge badge-blue">${a.section === 'mobile' ? 'موبایل' : a.section === 'acc' ? 'جانبی' : 'سخت‌افزار'} · ${esc(a.cat)}</span>
-                <span class="badge ${a.status === 'approved' ? 'badge-green' : a.status === 'rejected' ? 'badge-red' : 'badge-gold'}">${a.status === 'approved' ? 'تاییدشده' : a.status === 'rejected' ? 'ردشده' : 'در انتظار'}</span>
-              </div>
-              <h4 style="margin:8px 0 4px;">${esc(a.title)}</h4>
-              <div class="muted">${esc(a.seller)} · ${esc(a.city)} · ${formatToman(a.price)}</div>
-              <div class="row" style="margin-top:8px;">
-                ${a.status !== 'approved' ? `<button class="btn btn-success btn-sm" data-hw-status="${esc(a.id)}:approved">✓ تایید</button>` : ''}
-                ${a.status !== 'rejected' ? `<button class="btn btn-gold btn-sm" data-hw-status="${esc(a.id)}:rejected">✕ رد</button>` : ''}
-                <button class="btn btn-danger btn-sm" data-del-hw="${esc(a.id)}">حذف</button>
-              </div>
-            </div>
-          `).join('')}
-        </div>
-
-        <div class="section-header-title"><span>🎓 تایید آموزش‌ها و باکس‌ها</span></div>
-        <div class="grid" style="margin-bottom:14px;">
-          ${tuts.map((t) => `
-            <div class="card">
-              <div class="row space-between">
-                <strong>آموزش: ${esc(t.title)}</strong>
-                <span class="badge ${t.status === 'approved' ? 'badge-green' : 'badge-gold'}">${t.status}</span>
-              </div>
-              <div class="muted">${esc(t.teacher)} · ${formatToman(t.price)}</div>
-              <div class="row" style="margin-top:8px;">
-                ${t.status !== 'approved' ? `<button class="btn btn-success btn-sm" data-app-tut="${esc(t.id)}">تایید</button>` : ''}
-                <button class="btn btn-danger btn-sm" data-del-tut="${esc(t.id)}">حذف</button>
-              </div>
-            </div>
-          `).join('')}
-          ${boxes.map((b) => `
-            <div class="card">
-              <div class="row space-between">
-                <strong>باکس: ${esc(b.name)}</strong>
-                <span class="badge ${b.status === 'approved' ? 'badge-green' : 'badge-gold'}">${b.status}</span>
-              </div>
-              <div class="muted">${esc(b.seller)} · ${formatToman(b.price)}</div>
-              <div class="row" style="margin-top:8px;">
-                ${b.status !== 'approved' ? `<button class="btn btn-success btn-sm" data-app-box="${esc(b.id)}">تایید</button>` : ''}
-                <button class="btn btn-danger btn-sm" data-del-box="${esc(b.id)}">حذف</button>
-              </div>
-            </div>
-          `).join('')}
-        </div>
-
         <div class="section-header-title">
-          <span>🏪 فروشگاه‌های ثبت‌شده (${toPersianNum((db.stores || []).length)})</span>
-          <button id="admin-add-store-btn" class="btn btn-primary btn-sm">+ ثبت فروشگاه جدید</button>
+          <span>📢 بخش‌های آگهی، فروشگاه و تبلیغات</span>
+          <span class="muted">برای بررسی و جستجو روی هر کاشی بزنید</span>
         </div>
-        <div class="grid" style="margin-bottom:14px;">
-          ${(db.stores || []).map((s) => `
-            <div class="card">
-              <div class="row space-between">
-                <strong>${esc(s.name)}</strong>
-                <span class="badge ${s.status === 'approved' ? 'badge-green' : s.status === 'rejected' ? 'badge-red' : 'badge-gold'}">${s.status === 'approved' ? 'تاییدشده' : s.status === 'rejected' ? 'ردشده' : 'در انتظار تایید'}</span>
-              </div>
-              <div class="muted">${esc(s.province)} · ${esc(s.city)} (${esc(s.region)}) · ${esc(storeTypeLabel(s.type))}</div>
-              <div class="muted">${esc(s.phone)} · ساعات: ${esc(s.hours)}</div>
-              <div class="row" style="margin-top:8px;">
-                ${s.status !== 'approved' ? `<button class="btn btn-success btn-sm" data-store-status="${esc(s.id)}:approved">✓ تایید فروشگاه</button>` : ''}
-                ${s.status !== 'rejected' ? `<button class="btn btn-gold btn-sm" data-store-status="${esc(s.id)}:rejected">✕ رد</button>` : ''}
-                <button class="btn btn-danger btn-sm" data-del-store="${esc(s.id)}">حذف</button>
-              </div>
-            </div>
+        <div class="admin-ads-tiles-grid">
+          ${tileDefs.map((t) => `
+            <button type="button" class="admin-ads-tile ${state.adminAdsTile === t.id ? 'active' : ''}" data-ad-tile="${esc(t.id)}">
+              ${t.isBannerTile
+                ? `<span class="admin-ads-tile-badge zero">${toPersianNum(t.total)}</span>`
+                : `<span class="admin-ads-tile-badge ${t.pending === 0 ? 'zero' : ''}">${t.pending > 0 ? toPersianNum(t.pending) : '✓'}</span>`}
+              <div style="font-size:24px;">${t.icon}</div>
+              <div style="font-size:13px;font-weight:900;color:var(--navy-deep);">${esc(t.label)}</div>
+              <div class="muted">${t.isBannerTile ? `${toPersianNum(t.total)} بنر فعال` : `${toPersianNum(t.total)} مورد · ${toPersianNum(t.pending)} منتظر`}</div>
+            </button>
           `).join('')}
         </div>
-
-        <div class="section-header-title"><span>🪑 آگهی‌های اجاره میز کار (${toPersianNum((db.deskRentals || []).length)})</span></div>
-        <div class="grid">
-          ${(db.deskRentals || []).map((d) => `
-            <div class="card">
-              <div class="row space-between">
-                <span class="badge badge-blue">${esc(d.category)}</span>
-                <span class="badge ${d.status === 'approved' ? 'badge-green' : d.status === 'rejected' ? 'badge-red' : 'badge-gold'}">${d.status === 'approved' ? 'تاییدشده' : d.status === 'rejected' ? 'ردشده' : 'در انتظار تایید'}</span>
-              </div>
-              <h4 style="margin:6px 0 4px;">${esc(d.title)}</h4>
-              <div class="muted">${esc(d.storeName)} · ${esc(d.city)} (${esc(d.region)})</div>
-              <div class="row" style="margin-top:8px;">
-                ${d.status !== 'approved' ? `<button class="btn btn-success btn-sm" data-desk-status="${esc(d.id)}:approved">✓ تایید میز</button>` : ''}
-                ${d.status !== 'rejected' ? `<button class="btn btn-gold btn-sm" data-desk-status="${esc(d.id)}:rejected">✕ رد</button>` : ''}
-                <button class="btn btn-danger btn-sm" data-del-desk-rental="${esc(d.id)}">حذف</button>
-              </div>
-            </div>
-          `).join('')}
-        </div>
+        ${sectionBodyHtml}
       `;
     }
 
@@ -2625,12 +3178,17 @@
 
   function openProfileModal() {
     const u = state.session.user || {};
+    const canBio = Boolean(window.PublicKeyCredential);
     showModal(`
       <div class="row space-between" style="margin-bottom:8px;">
         <h3 style="margin:0;">پروفایل همکار</h3>
         <span class="badge badge-blue">${esc(getUserTier())}</span>
       </div>
       <div class="muted" style="margin-bottom:12px;">نام کاربری (ایمیل): ${esc(state.session.email)}</div>
+      <div class="locked-address-box">
+        <div style="font-size:12px;font-weight:800;color:var(--navy-deep);">🔒 نشانی صنفی ثبت‌شده (فقط قابل ویرایش توسط مدیریت)</div>
+        <div class="muted" style="margin-top:4px;">${esc(u.province || 'تهران')} · ${esc(u.city || 'تهران')} (${esc(u.region || 'همه مناطق')})</div>
+      </div>
       <div class="form-group">
         <label class="form-label">نام و نام خانوادگی</label>
         <input id="prof-name" class="input" value="${esc(u.fullName || '')}" />
@@ -2643,6 +3201,11 @@
         <label class="form-label">تغییر رمز عبور حساب (اختیاری)</label>
         <input id="prof-pass" class="input" type="password" dir="ltr" placeholder="حداقل ۶ کاراکتر" />
       </div>
+      ${canBio ? `
+        <button type="button" id="prof-bio-btn" class="btn btn-outline btn-block" style="margin-bottom:10px;">
+          🔐 ${state.savedAccount?.webauthnCredId ? 'اثر انگشت مرورگر فعال است (به‌روزرسانی)' : 'فعال‌سازی ورود با اثر انگشت مرورگر'}
+        </button>
+      ` : ''}
       ${canCreateStore() ? `
         <div class="row" style="margin-bottom:10px;">
           <button id="prof-manage-store-btn" class="btn btn-navy" style="flex:1;">🏪 مدیریت فروشگاه من</button>
@@ -2654,6 +3217,18 @@
         <button id="prof-save" class="btn btn-primary">ذخیره پروفایل</button>
       </div>
     `);
+    const bioBtn = document.getElementById('prof-bio-btn');
+    if (bioBtn) {
+      bioBtn.onclick = async () => {
+        try {
+          await enrollBrowserBiometric();
+          toast('ورود با اثر انگشت / قفل دستگاه با موفقیت فعال شد.');
+          openProfileModal();
+        } catch (err) {
+          toast(err?.message || 'مرورگر از ثبت اثر انگشت پشتیبانی نکرد.');
+        }
+      };
+    }
     const mgBtn = document.getElementById('prof-manage-store-btn');
     if (mgBtn) mgBtn.onclick = () => { closeModal(); state.showMyStore = true; state.showDeskRentals = false; render(); };
     const stBtn = document.getElementById('prof-add-store-btn');
@@ -2664,10 +3239,7 @@
           method: 'PATCH',
           body: {
             fullName: document.getElementById('prof-name').value.trim(),
-            phone: document.getElementById('prof-phone').value.trim(),
-            province: state.province,
-            city: state.city,
-            region: state.region
+            phone: document.getElementById('prof-phone').value.trim()
           }
         });
         const newPass = document.getElementById('prof-pass').value;
@@ -2684,43 +3256,61 @@
   }
 
   function openRegisterStoreModal() {
-    let prov = state.province;
-    let city = state.city;
     const defaultType = getUserTier() === 'عمده‌فروش موبایل' ? 'mobile'
       : getUserTier() === 'عمده‌فروش جانبی' ? 'acc'
       : getUserTier() === 'قطعه‌فروش' ? 'hw' : 'both';
+    const form = {
+      prov: isAllScope(state.province) ? 'تهران' : state.province,
+      city: isAllScope(state.city) ? 'تهران' : state.city,
+      reg: isAllScope(state.region) ? 'همه مناطق' : state.region,
+      name: '',
+      type: defaultType,
+      phone: state.session.user?.phone || '',
+      addr: '',
+      hours: '۱۰ تا ۲۰'
+    };
+    const syncDomToForm = () => {
+      const g = (id) => document.getElementById(id)?.value;
+      if (g('st-name') !== undefined) form.name = g('st-name');
+      if (g('st-type') !== undefined) form.type = g('st-type');
+      if (g('st-phone') !== undefined) form.phone = g('st-phone');
+      if (g('st-addr') !== undefined) form.addr = g('st-addr');
+      if (g('st-hours') !== undefined) form.hours = g('st-hours');
+      if (g('st-reg') !== undefined) form.reg = g('st-reg');
+    };
 
     const draw = () => {
-      const cities = Object.keys(LOCATIONS[prov] || {});
-      if (!cities.includes(city)) city = cities[0] || '';
-      const regions = LOCATIONS[prov]?.[city] || ['همه مناطق'];
+      const cities = Object.keys(LOCATIONS[form.prov] || {});
+      if (!cities.includes(form.city)) form.city = cities[0] || '';
+      const regions = LOCATIONS[form.prov]?.[form.city] || ['همه مناطق'];
+      if (!regions.includes(form.reg)) form.reg = regions[0] || 'همه مناطق';
       showModal(`
         <h3 style="margin-top:0;">🏪 ثبت فروشگاه جدید در بازمو</h3>
-        <div class="form-group"><input id="st-name" class="input" placeholder="نام فروشگاه / بنکداری" /></div>
+        <div class="grid" style="grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px;">
+          <select id="st-prov" class="select">${Object.keys(LOCATIONS).map((p) => `<option value="${esc(p)}" ${p === form.prov ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select>
+          <select id="st-city" class="select">${cities.map((c) => `<option value="${esc(c)}" ${c === form.city ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
+          <select id="st-reg" class="select">${regions.map((r) => `<option value="${esc(r)}" ${r === form.reg ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select>
+        </div>
+        <div class="form-group"><input id="st-name" class="input" placeholder="نام فروشگاه / بنکداری" value="${esc(form.name)}" /></div>
         <div class="form-group">
           <label class="form-label">حوزه فعالیت فروشگاه</label>
           <select id="st-type" class="select">
-            <option value="mobile" ${defaultType === 'mobile' ? 'selected' : ''}>فروشگاه موبایل</option>
-            <option value="acc" ${defaultType === 'acc' ? 'selected' : ''}>فروشگاه لوازم جانبی</option>
-            <option value="hw" ${defaultType === 'hw' ? 'selected' : ''}>فروشگاه قطعات سخت‌افزار</option>
-            <option value="both" ${defaultType === 'both' ? 'selected' : ''}>موبایل و جانبی</option>
+            <option value="mobile" ${form.type === 'mobile' ? 'selected' : ''}>فروشگاه موبایل</option>
+            <option value="acc" ${form.type === 'acc' ? 'selected' : ''}>فروشگاه لوازم جانبی</option>
+            <option value="hw" ${form.type === 'hw' ? 'selected' : ''}>فروشگاه قطعات سخت‌افزار</option>
+            <option value="both" ${form.type === 'both' ? 'selected' : ''}>موبایل و جانبی</option>
           </select>
         </div>
-        <div class="grid" style="grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px;">
-          <select id="st-prov" class="select">${Object.keys(LOCATIONS).map((p) => `<option value="${esc(p)}" ${p === prov ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select>
-          <select id="st-city" class="select">${cities.map((c) => `<option value="${esc(c)}" ${c === city ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
-          <select id="st-reg" class="select">${regions.map((r) => `<option value="${esc(r)}">${esc(r)}</option>`).join('')}</select>
-        </div>
-        <div class="form-group"><input id="st-phone" class="input" dir="ltr" placeholder="تلفن تماس" value="${esc(state.session.user?.phone || '')}" /></div>
-        <div class="form-group"><input id="st-addr" class="input" placeholder="آدرس دقیق پاساژ / واحد" /></div>
-        <div class="form-group"><input id="st-hours" class="input" placeholder="ساعات کاری (مثلاً ۱۰ تا ۲۰)" value="۱۰ تا ۲۰" /></div>
+        <div class="form-group"><input id="st-phone" class="input" dir="ltr" placeholder="تلفن تماس" value="${esc(form.phone)}" /></div>
+        <div class="form-group"><input id="st-addr" class="input" placeholder="آدرس دقیق پاساژ / واحد" value="${esc(form.addr)}" /></div>
+        <div class="form-group"><input id="st-hours" class="input" placeholder="ساعات کاری (مثلاً ۱۰ تا ۲۰)" value="${esc(form.hours)}" /></div>
         <div class="row space-between">
           <button class="btn btn-outline" onclick="window.__closeModal()">انصراف</button>
           <button id="st-save" class="btn btn-primary">ثبت فروشگاه</button>
         </div>
       `);
-      document.getElementById('st-prov').onchange = (e) => { prov = e.target.value; city = Object.keys(LOCATIONS[prov] || {})[0] || ''; draw(); };
-      document.getElementById('st-city').onchange = (e) => { city = e.target.value; draw(); };
+      document.getElementById('st-prov').onchange = (e) => { syncDomToForm(); form.prov = e.target.value; form.city = Object.keys(LOCATIONS[form.prov] || {})[0] || ''; form.reg = 'همه مناطق'; draw(); };
+      document.getElementById('st-city').onchange = (e) => { syncDomToForm(); form.city = e.target.value; form.reg = 'همه مناطق'; draw(); };
       document.getElementById('st-save').onclick = async () => {
         const name = document.getElementById('st-name').value.trim();
         if (!name) return toast('نام فروشگاه الزامی است.');
@@ -2944,33 +3534,63 @@
   }
 
   function openAdminUserModal() {
-    let prov = 'تهران';
-    let city = 'تهران';
+    const form = {
+      prov: 'تهران',
+      city: 'تهران',
+      reg: 'همه مناطق',
+      email: '',
+      pass: '',
+      name: '',
+      phone: '',
+      role: ALL_ROLES[0]
+    };
+    const syncDomToForm = () => {
+      const g = (id) => document.getElementById(id)?.value;
+      if (g('au-email') !== undefined) form.email = g('au-email');
+      if (g('au-pass') !== undefined) form.pass = g('au-pass');
+      if (g('au-name') !== undefined) form.name = g('au-name');
+      if (g('au-phone') !== undefined) form.phone = g('au-phone');
+      if (g('au-role') !== undefined) form.role = g('au-role');
+      if (g('au-m-reg') !== undefined) form.reg = g('au-m-reg');
+    };
     const draw = () => {
-      const cities = Object.keys(LOCATIONS[prov] || {});
-      if (!cities.includes(city)) city = cities[0] || '';
-      const regions = LOCATIONS[prov]?.[city] || ['همه مناطق'];
+      const cities = Object.keys(LOCATIONS[form.prov] || {});
+      if (!cities.includes(form.city)) form.city = cities[0] || '';
+      const regions = LOCATIONS[form.prov]?.[form.city] || ['همه مناطق'];
+      if (!regions.includes(form.reg)) form.reg = regions[0] || 'همه مناطق';
       showModal(`
         <h3 style="margin-top:0;">افزودن / ویرایش کاربر</h3>
-        <div class="form-group"><input id="au-email" class="input" type="email" dir="ltr" placeholder="ایمیل کاربر (الزامی)" /></div>
-        <div class="form-group"><input id="au-pass" class="input" type="password" dir="ltr" placeholder="رمز عبور ورود (اختیاری - حداقل ۶ کاراکتر)" /></div>
-        <div class="form-group"><input id="au-name" class="input" placeholder="نام و نام خانوادگی" /></div>
-        <div class="form-group"><input id="au-phone" class="input" dir="ltr" placeholder="شماره تماس" /></div>
-        <div class="form-group">
-          <select id="au-role" class="select">${ALL_ROLES.map((r) => `<option value="${esc(r)}">${esc(r)}</option>`).join('')}</select>
+        <div class="form-label" style="margin-bottom:6px;">📍 ابتدا آدرس و محدوده صنفی کاربر را انتخاب کنید</div>
+        <div class="grid" style="grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;">
+          <select id="au-m-prov" class="select">${Object.keys(LOCATIONS).map((p) => `<option value="${esc(p)}" ${p === form.prov ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select>
+          <select id="au-m-city" class="select">${cities.map((c) => `<option value="${esc(c)}" ${c === form.city ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
+          <select id="au-m-reg" class="select">${regions.map((r) => `<option value="${esc(r)}" ${r === form.reg ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select>
         </div>
-        <div class="grid" style="grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px;">
-          <select id="au-m-prov" class="select">${Object.keys(LOCATIONS).map((p) => `<option value="${esc(p)}" ${p === prov ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select>
-          <select id="au-m-city" class="select">${cities.map((c) => `<option value="${esc(c)}" ${c === city ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
-          <select id="au-m-reg" class="select">${regions.map((r) => `<option value="${esc(r)}">${esc(r)}</option>`).join('')}</select>
+        <div class="form-group"><input id="au-email" class="input" type="email" dir="ltr" placeholder="ایمیل کاربر (الزامی)" value="${esc(form.email)}" /></div>
+        <div class="form-group"><input id="au-pass" class="input" type="password" dir="ltr" placeholder="رمز عبور ورود (اختیاری - حداقل ۶ کاراکتر)" value="${esc(form.pass)}" /></div>
+        <div class="form-group"><input id="au-name" class="input" placeholder="نام و نام خانوادگی" value="${esc(form.name)}" /></div>
+        <div class="form-group"><input id="au-phone" class="input" dir="ltr" placeholder="شماره تماس" value="${esc(form.phone)}" /></div>
+        <div class="form-group">
+          <select id="au-role" class="select">${ALL_ROLES.map((r) => `<option value="${esc(r)}" ${r === form.role ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select>
         </div>
         <div class="row space-between">
           <button class="btn btn-outline" onclick="window.__closeModal()">انصراف</button>
           <button id="au-save" class="btn btn-primary">ذخیره کاربر</button>
         </div>
       `);
-      document.getElementById('au-m-prov').onchange = (e) => { prov = e.target.value; city = Object.keys(LOCATIONS[prov] || {})[0] || ''; draw(); };
-      document.getElementById('au-m-city').onchange = (e) => { city = e.target.value; draw(); };
+      document.getElementById('au-m-prov').onchange = (e) => {
+        syncDomToForm();
+        form.prov = e.target.value;
+        form.city = Object.keys(LOCATIONS[form.prov] || {})[0] || '';
+        form.reg = 'همه مناطق';
+        draw();
+      };
+      document.getElementById('au-m-city').onchange = (e) => {
+        syncDomToForm();
+        form.city = e.target.value;
+        form.reg = 'همه مناطق';
+        draw();
+      };
       document.getElementById('au-save').onclick = async () => {
         try {
           await api('/api/admin/users', {
@@ -2988,6 +3608,77 @@
           });
           closeModal();
           toast('کاربر ذخیره شد.');
+          await loadAppState(true);
+        } catch (err) {
+          toast(err.message);
+        }
+      };
+    };
+    draw();
+  }
+
+  function openAdminEditLocationModal(u) {
+    const form = {
+      prov: LOCATIONS[u.province] ? u.province : 'تهران',
+      city: u.city || 'تهران',
+      reg: u.region || 'همه مناطق',
+      fullName: u.fullName || '',
+      phone: u.phone || ''
+    };
+    const syncDomToForm = () => {
+      const g = (id) => document.getElementById(id)?.value;
+      if (g('aul-name') !== undefined) form.fullName = g('aul-name');
+      if (g('aul-phone') !== undefined) form.phone = g('aul-phone');
+      if (g('aul-reg') !== undefined) form.reg = g('aul-reg');
+    };
+    const draw = () => {
+      const cities = Object.keys(LOCATIONS[form.prov] || {});
+      if (!cities.includes(form.city)) form.city = cities[0] || '';
+      const regions = LOCATIONS[form.prov]?.[form.city] || ['همه مناطق'];
+      if (!regions.includes(form.reg)) form.reg = regions[0] || 'همه مناطق';
+      showModal(`
+        <h3 style="margin-top:0;">📍 ویرایش آدرس و مشخصات کاربر</h3>
+        <div class="muted" style="margin-bottom:10px;">${esc(u.email)}</div>
+        <div class="grid" style="grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;">
+          <select id="aul-prov" class="select">${Object.keys(LOCATIONS).map((p) => `<option value="${esc(p)}" ${p === form.prov ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select>
+          <select id="aul-city" class="select">${cities.map((c) => `<option value="${esc(c)}" ${c === form.city ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
+          <select id="aul-reg" class="select">${regions.map((r) => `<option value="${esc(r)}" ${r === form.reg ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select>
+        </div>
+        <div class="form-group"><input id="aul-name" class="input" placeholder="نام و نام خانوادگی" value="${esc(form.fullName)}" /></div>
+        <div class="form-group"><input id="aul-phone" class="input" dir="ltr" placeholder="شماره تماس" value="${esc(form.phone)}" /></div>
+        <div class="row space-between">
+          <button class="btn btn-outline" onclick="window.__closeModal()">انصراف</button>
+          <button id="aul-save" class="btn btn-primary">ذخیره آدرس</button>
+        </div>
+      `);
+      document.getElementById('aul-prov').onchange = (e) => {
+        syncDomToForm();
+        form.prov = e.target.value;
+        form.city = Object.keys(LOCATIONS[form.prov] || {})[0] || '';
+        form.reg = 'همه مناطق';
+        draw();
+      };
+      document.getElementById('aul-city').onchange = (e) => {
+        syncDomToForm();
+        form.city = e.target.value;
+        form.reg = 'همه مناطق';
+        draw();
+      };
+      document.getElementById('aul-save').onclick = async () => {
+        try {
+          await api(`/api/admin/users/${encodeURIComponent(u.id)}/location`, {
+            method: 'PATCH',
+            body: {
+              email: u.email,
+              province: document.getElementById('aul-prov').value,
+              city: document.getElementById('aul-city').value,
+              region: document.getElementById('aul-reg').value,
+              fullName: document.getElementById('aul-name').value.trim(),
+              phone: document.getElementById('aul-phone').value.trim()
+            }
+          });
+          closeModal();
+          toast('آدرس کاربر به‌روزرسانی شد.');
           await loadAppState(true);
         } catch (err) {
           toast(err.message);
@@ -3044,8 +3735,29 @@
     }
   }
 
+  let activeHScrollDrag = null;
+  window.addEventListener('mousemove', (e) => {
+    if (!activeHScrollDrag) return;
+    const dx = e.clientX - activeHScrollDrag.startX;
+    if (Math.abs(dx) > 5) activeHScrollDrag.moved = true;
+    if (activeHScrollDrag.moved) {
+      activeHScrollDrag.el.scrollLeft = activeHScrollDrag.startScrollLeft - dx;
+    }
+  });
+  window.addEventListener('mouseup', () => {
+    if (!activeHScrollDrag) return;
+    const { el, moved } = activeHScrollDrag;
+    activeHScrollDrag = null;
+    if (moved && el) {
+      el.dataset.dragMoved = '1';
+      setTimeout(() => { delete el.dataset.dragMoved; }, 80);
+    }
+  });
+
   function bindHorizontalScrollers() {
     document.querySelectorAll('.store-hscroll, #admin-tabs-strip').forEach((el) => {
+      if (el.dataset.hscrollBound === '1') return;
+      el.dataset.hscrollBound = '1';
       el.addEventListener(
         'wheel',
         (e) => {
@@ -3058,39 +3770,16 @@
         { passive: false }
       );
 
-      let dragging = false;
-      let moved = false;
-      let startX = 0;
-      let startScrollLeft = 0;
-
       el.addEventListener('mousedown', (e) => {
         if (e.button !== 0) return;
-        dragging = true;
-        moved = false;
-        startX = e.clientX;
-        startScrollLeft = el.scrollLeft;
+        activeHScrollDrag = {
+          el,
+          moved: false,
+          startX: e.clientX,
+          startScrollLeft: el.scrollLeft
+        };
       });
 
-      const onMouseMove = (e) => {
-        if (!dragging) return;
-        const dx = e.clientX - startX;
-        if (Math.abs(dx) > 5) moved = true;
-        if (moved) {
-          el.scrollLeft = startScrollLeft - dx;
-        }
-      };
-
-      const stopDrag = () => {
-        if (!dragging) return;
-        dragging = false;
-        if (moved) {
-          el.dataset.dragMoved = '1';
-          setTimeout(() => { delete el.dataset.dragMoved; }, 80);
-        }
-      };
-
-      window.addEventListener('mousemove', onMouseMove);
-      window.addEventListener('mouseup', stopDrag);
       el.addEventListener('click', (e) => {
         if (el.dataset.dragMoved === '1') {
           e.preventDefault();
@@ -3274,58 +3963,86 @@
   }
 
   function openNewDeskModal(initialKind) {
-    let kind = initialKind || (state.deskSubTab === 'requests' ? 'request' : 'rental');
-    let prov = state.province;
-    let city = state.city;
+    const form = {
+      kind: initialKind || (state.deskSubTab === 'requests' ? 'request' : 'rental'),
+      prov: isAllScope(state.province) ? 'تهران' : state.province,
+      city: isAllScope(state.city) ? 'تهران' : state.city,
+      reg: isAllScope(state.region) ? 'همه مناطق' : state.region,
+      title: '',
+      cat: 'تعمیرات سخت‌افزار',
+      store: '',
+      daily: '',
+      monthly: '',
+      coop: '',
+      equip: '',
+      phone: state.session.user?.phone || '',
+      desc: '',
+      budget: '',
+      prop: ''
+    };
+    const syncDomToForm = () => {
+      const g = (id) => document.getElementById(id)?.value;
+      if (g('dk-title') !== undefined) form.title = g('dk-title');
+      if (g('dk-cat') !== undefined) form.cat = g('dk-cat');
+      if (g('dk-store') !== undefined) form.store = g('dk-store');
+      if (g('dk-reg') !== undefined) form.reg = g('dk-reg');
+      if (g('dk-daily') !== undefined) form.daily = g('dk-daily');
+      if (g('dk-monthly') !== undefined) form.monthly = g('dk-monthly');
+      if (g('dk-coop') !== undefined) form.coop = g('dk-coop');
+      if (g('dk-equip') !== undefined) form.equip = g('dk-equip');
+      if (g('dk-phone') !== undefined) form.phone = g('dk-phone');
+      if (g('dk-desc') !== undefined) form.desc = g('dk-desc');
+      if (g('dk-budget') !== undefined) form.budget = g('dk-budget');
+      if (g('dk-prop') !== undefined) form.prop = g('dk-prop');
+    };
     const draw = () => {
-      const cities = Object.keys(LOCATIONS[prov] || {});
-      if (!cities.includes(city)) city = cities[0] || '';
-      const regions = LOCATIONS[prov]?.[city] || ['همه مناطق'];
-      const isRental = kind === 'rental';
+      const cities = Object.keys(LOCATIONS[form.prov] || {});
+      if (!cities.includes(form.city)) form.city = cities[0] || '';
+      const regions = LOCATIONS[form.prov]?.[form.city] || ['همه مناطق'];
+      if (!regions.includes(form.reg)) form.reg = regions[0] || 'همه مناطق';
+      const isRental = form.kind === 'rental';
+      const cats = ['تعمیرات سخت‌افزار', 'نرم‌افزار و فلش', 'فروش موبایل', 'لوازم جانبی'];
       showModal(`
         <h3 style="margin-top:0;">${isRental ? '🪑 ثبت میز کار برای اجاره' : '🤝 ثبت درخواست یا پیشنهاد میز'}</h3>
         <div class="sub-tabs" style="margin-bottom:10px;">
           <button type="button" class="sub-tab ${isRental ? 'active' : ''}" id="desk-kind-rental">🪑 میز برای اجاره دارم</button>
           <button type="button" class="sub-tab ${!isRental ? 'active' : ''}" id="desk-kind-request">🤝 متقاضی میز / پیشنهاد همکاری</button>
         </div>
-        <div class="form-group"><input id="dk-title" class="input" placeholder="${isRental ? 'عنوان (مثلاً اجاره میز تعمیرات برد در علاءالدین)' : 'عنوان (مثلاً تعمیرکار آیفون هستم - دنبال میز درصدی)'}" /></div>
+        <div class="grid" style="grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px;">
+          <select id="dk-prov" class="select">${Object.keys(LOCATIONS).map((p) => `<option value="${esc(p)}" ${p === form.prov ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select>
+          <select id="dk-city" class="select">${cities.map((c) => `<option value="${esc(c)}" ${c === form.city ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
+          <select id="dk-reg" class="select">${regions.map((r) => `<option value="${esc(r)}" ${r === form.reg ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select>
+        </div>
+        <div class="form-group"><input id="dk-title" class="input" placeholder="${isRental ? 'عنوان (مثلاً اجاره میز تعمیرات برد در علاءالدین)' : 'عنوان (مثلاً تعمیرکار آیفون هستم - دنبال میز درصدی)'}" value="${esc(form.title)}" /></div>
         <div class="form-group">
           <select id="dk-cat" class="select">
-            <option value="تعمیرات سخت‌افزار">تعمیرات سخت‌افزار</option>
-            <option value="نرم‌افزار و فلش">نرم‌افزار و فلش</option>
-            <option value="فروش موبایل">فروش موبایل</option>
-            <option value="لوازم جانبی">لوازم جانبی</option>
+            ${cats.map((c) => `<option value="${esc(c)}" ${c === form.cat ? 'selected' : ''}>${esc(c)}</option>`).join('')}
           </select>
         </div>
-        ${isRental ? `<div class="form-group"><input id="dk-store" class="input" placeholder="نام مغازه / پاساژ" /></div>` : ''}
-        <div class="grid" style="grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px;">
-          <select id="dk-prov" class="select">${Object.keys(LOCATIONS).map((p) => `<option value="${esc(p)}" ${p === prov ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select>
-          <select id="dk-city" class="select">${cities.map((c) => `<option value="${esc(c)}" ${c === city ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
-          <select id="dk-reg" class="select">${regions.map((r) => `<option value="${esc(r)}">${esc(r)}</option>`).join('')}</select>
-        </div>
+        ${isRental ? `<div class="form-group"><input id="dk-store" class="input" placeholder="نام مغازه / پاساژ" value="${esc(form.store)}" /></div>` : ''}
         ${isRental ? `
           <div class="grid" style="grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
-            <input id="dk-daily" class="input" type="number" dir="ltr" placeholder="اجاره روزانه (تومان)" />
-            <input id="dk-monthly" class="input" type="number" dir="ltr" placeholder="اجاره ماهانه (تومان)" />
+            <input id="dk-daily" class="input" type="number" dir="ltr" placeholder="اجاره روزانه (تومان)" value="${esc(form.daily)}" />
+            <input id="dk-monthly" class="input" type="number" dir="ltr" placeholder="اجاره ماهانه (تومان)" value="${esc(form.monthly)}" />
           </div>
-          <div class="form-group"><input id="dk-coop" class="input" placeholder="مدل همکاری (مثلاً ماهانه ثابت یا درصدی ۶۰/۴۰)" /></div>
-          <div class="form-group"><input id="dk-equip" class="input" placeholder="تجهیزات موجود (لوپ، هیتر، سیستم، ویترین...)" /></div>
-          <div class="form-group"><input id="dk-phone" class="input" dir="ltr" placeholder="تلفن تماس" value="${esc(state.session.user?.phone || '')}" /></div>
-          <div class="form-group"><textarea id="dk-desc" class="textarea" rows="2" placeholder="شرایط و توضیحات تکمیلی..."></textarea></div>
+          <div class="form-group"><input id="dk-coop" class="input" placeholder="مدل همکاری (مثلاً ماهانه ثابت یا درصدی ۶۰/۴۰)" value="${esc(form.coop)}" /></div>
+          <div class="form-group"><input id="dk-equip" class="input" placeholder="تجهیزات موجود (لوپ، هیتر، سیستم، ویترین...)" value="${esc(form.equip)}" /></div>
+          <div class="form-group"><input id="dk-phone" class="input" dir="ltr" placeholder="تلفن تماس" value="${esc(form.phone)}" /></div>
+          <div class="form-group"><textarea id="dk-desc" class="textarea" rows="2" placeholder="شرایط و توضیحات تکمیلی...">${esc(form.desc)}</textarea></div>
         ` : `
-          <div class="form-group"><input id="dk-budget" class="input" type="number" dir="ltr" placeholder="سقف بودجه ماهانه پیشنهادی (تومان - اختیاری)" /></div>
-          <div class="form-group"><input id="dk-phone" class="input" dir="ltr" placeholder="شماره تماس" value="${esc(state.session.user?.phone || '')}" /></div>
-          <div class="form-group"><textarea id="dk-prop" class="textarea" rows="3" placeholder="تخصص، تجهیزات همراه و پیشنهاد همکاری برای مغازه‌داران..."></textarea></div>
+          <div class="form-group"><input id="dk-budget" class="input" type="number" dir="ltr" placeholder="سقف بودجه ماهانه پیشنهادی (تومان - اختیاری)" value="${esc(form.budget)}" /></div>
+          <div class="form-group"><input id="dk-phone" class="input" dir="ltr" placeholder="شماره تماس" value="${esc(form.phone)}" /></div>
+          <div class="form-group"><textarea id="dk-prop" class="textarea" rows="3" placeholder="تخصص، تجهیزات همراه و پیشنهاد همکاری برای مغازه‌داران...">${esc(form.prop)}</textarea></div>
         `}
         <div class="row space-between">
           <button type="button" class="btn btn-outline" onclick="window.__closeModal()">انصراف</button>
           <button type="button" id="dk-save" class="btn btn-primary">${isRental ? '✓ ثبت میز کار' : '✓ ثبت درخواست همکاری'}</button>
         </div>
       `);
-      document.getElementById('desk-kind-rental').onclick = () => { kind = 'rental'; draw(); };
-      document.getElementById('desk-kind-request').onclick = () => { kind = 'request'; draw(); };
-      document.getElementById('dk-prov').onchange = (e) => { prov = e.target.value; city = Object.keys(LOCATIONS[prov] || {})[0] || ''; draw(); };
-      document.getElementById('dk-city').onchange = (e) => { city = e.target.value; draw(); };
+      document.getElementById('desk-kind-rental').onclick = () => { syncDomToForm(); form.kind = 'rental'; draw(); };
+      document.getElementById('desk-kind-request').onclick = () => { syncDomToForm(); form.kind = 'request'; draw(); };
+      document.getElementById('dk-prov').onchange = (e) => { syncDomToForm(); form.prov = e.target.value; form.city = Object.keys(LOCATIONS[form.prov] || {})[0] || ''; form.reg = 'همه مناطق'; draw(); };
+      document.getElementById('dk-city').onchange = (e) => { syncDomToForm(); form.city = e.target.value; form.reg = 'همه مناطق'; draw(); };
       document.getElementById('dk-save').onclick = async () => {
         const title = document.getElementById('dk-title').value.trim();
         if (!title) return toast('عنوان آگهی الزامی است.');
@@ -3679,7 +4396,7 @@
     state._resetScrollNext = false;
 
     const activeEl = document.activeElement;
-    const preserveFocusIds = new Set(['mob-search', 'sw-search', 'acc-search', 'hw-search', 'forum-search', 'au-search', 'desk-search', 'login-email', 'login-password']);
+    const preserveFocusIds = new Set(['mob-search', 'sw-search', 'acc-search', 'hw-search', 'forum-search', 'au-search', 'admin-ads-search', 'desk-search', 'login-email', 'login-password']);
     const activeId = activeEl && preserveFocusIds.has(activeEl.id) ? activeEl.id : '';
     const selStart = activeId && typeof activeEl.selectionStart === 'number' ? activeEl.selectionStart : null;
     const selEnd = activeId && typeof activeEl.selectionEnd === 'number' ? activeEl.selectionEnd : null;
@@ -3867,7 +4584,7 @@
       lastScrolledAdminTab = state.adminTab;
       const activeAdminTab = document.querySelector('#admin-tabs-strip .seg-tab.active');
       if (activeAdminTab && activeAdminTab.scrollIntoView) {
-        activeAdminTab.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+        activeAdminTab.scrollIntoView({ behavior: 'auto', inline: 'center', block: 'nearest' });
       }
     }
   }
@@ -3997,6 +4714,24 @@
         await loadAppState(true);
       };
     }
+
+    document.querySelectorAll('[data-promo-banner]').forEach((el) => {
+      el.onclick = () => {
+        const b = (state.db?.banners || []).find((x) => x.id === el.dataset.promoBanner);
+        if (!b) return;
+        if (b.linkType === 'url' && b.linkTarget) {
+          window.open(b.linkTarget, '_blank', 'noopener,noreferrer');
+        } else if (b.linkType === 'store' && b.linkTarget) {
+          state.showDeskRentals = false;
+          state.showMyStore = false;
+          state.mobileDetailId = '';
+          state.userTab = 0;
+          state.storeDetailId = b.linkTarget;
+          state._resetScrollNext = true;
+          render();
+        }
+      };
+    });
 
     // Mobile tab events
     const mobSearch = document.getElementById('mob-search');
@@ -4359,7 +5094,25 @@
 
     // Admin events
     document.querySelectorAll('[data-goto-atab]').forEach((b) => {
-      b.onclick = () => { state.adminTab = b.dataset.gotoAtab; render(); };
+      b.onclick = () => {
+        state.adminTab = b.dataset.gotoAtab;
+        if (b.dataset.gotoUserSub) state.adminUserSubTab = b.dataset.gotoUserSub;
+        if (b.dataset.gotoAdsec) {
+          state.adminAdsTile = b.dataset.gotoAdsec;
+          state.adminAdsShowAll = false;
+        }
+        state._resetScrollNext = true;
+        render();
+      };
+    });
+    document.querySelectorAll('[data-au-sub]').forEach((b) => {
+      b.onclick = () => { state.adminUserSubTab = b.dataset.auSub; render(); };
+    });
+    document.querySelectorAll('[data-edit-user-loc]').forEach((b) => {
+      b.onclick = () => {
+        const u = (state.db.users || []).find((x) => x.id === b.dataset.editUserLoc);
+        if (u) openAdminEditLocationModal(u);
+      };
     });
     const auSearch = document.getElementById('au-search');
     if (auSearch) auSearch.oninput = (e) => debouncedRenderSearch(() => { state.adminUserSearch = e.target.value; });
@@ -4371,6 +5124,98 @@
     if (auProv) auProv.onchange = (e) => { state.adminUserProvince = e.target.value; render(); };
     const auAddBtn = document.getElementById('au-add-btn');
     if (auAddBtn) auAddBtn.onclick = openAdminUserModal;
+
+    // Admin Ads Section Tiles, Search & Banner Management
+    document.querySelectorAll('[data-ad-tile]').forEach((b) => {
+      b.onclick = () => {
+        state.adminAdsTile = b.dataset.adTile;
+        state.adminAdsShowAll = false;
+        render();
+      };
+    });
+    const adminAdsSearchEl = document.getElementById('admin-ads-search');
+    if (adminAdsSearchEl) {
+      adminAdsSearchEl.oninput = (e) => debouncedRenderSearch(() => { state.adminAdsSearch = e.target.value; });
+    }
+    document.querySelectorAll('[data-ad-filter]').forEach((b) => {
+      b.onclick = () => { state.adminAdsFilter = b.dataset.adFilter; render(); };
+    });
+    const showAllAdsBtn = document.getElementById('admin-ads-show-all-btn');
+    if (showAllAdsBtn) {
+      showAllAdsBtn.onclick = () => { state.adminAdsShowAll = !state.adminAdsShowAll; render(); };
+    }
+    document.querySelectorAll('[data-banner-sec]').forEach((b) => {
+      b.onclick = () => { state.adminBannerSection = b.dataset.bannerSec; render(); };
+    });
+    document.querySelectorAll('[data-banner-linktype]').forEach((sel) => {
+      sel.onchange = () => {
+        const slotIdx = sel.dataset.bannerLinktype;
+        const urlWrap = document.getElementById(`banner-url-wrap-${slotIdx}`);
+        const stWrap = document.getElementById(`banner-store-wrap-${slotIdx}`);
+        if (urlWrap) urlWrap.style.display = sel.value === 'url' ? 'block' : 'none';
+        if (stWrap) stWrap.style.display = sel.value === 'store' ? 'block' : 'none';
+      };
+    });
+    document.querySelectorAll('[data-save-banner]').forEach((b) => {
+      b.onclick = async () => {
+        const slotIdx = Number(b.dataset.saveBanner);
+        const curSec = state.adminBannerSection || 'mobile';
+        const existing = (state.db.banners || []).find((x) => x.section === curSec && Number(x.slotIndex) === slotIdx);
+        const fileEl = document.getElementById(`banner-file-${slotIdx}`);
+        const file = fileEl?.files?.[0];
+        const title = (document.getElementById(`banner-title-${slotIdx}`)?.value || '').trim();
+        const linkType = document.getElementById(`banner-linktype-${slotIdx}`)?.value || 'none';
+        const linkTarget = linkType === 'url'
+          ? (document.getElementById(`banner-url-${slotIdx}`)?.value || '').trim()
+          : linkType === 'store'
+            ? (document.getElementById(`banner-store-${slotIdx}`)?.value || '').trim()
+            : '';
+
+        if (!file && !existing?.hasImage) {
+          return toast('لطفاً ابتدا یک تصویر برای بنر انتخاب کنید.');
+        }
+        if (linkType === 'url' && !linkTarget) {
+          return toast('لطفاً آدرس وب‌سایت مقصد را وارد کنید.');
+        }
+        if (linkType === 'store' && !linkTarget) {
+          return toast('لطفاً فروشگاه مقصد را انتخاب کنید.');
+        }
+        b.disabled = true;
+        try {
+          const payload = {
+            section: curSec,
+            slotIndex: slotIdx,
+            title,
+            linkType,
+            linkTarget,
+            keepExistingImage: !file && Boolean(existing?.hasImage)
+          };
+          if (file) {
+            const compressed = await compressImageFileToBase64(file);
+            payload.imageMime = compressed.imageMime;
+            payload.imageBase64 = compressed.imageBase64;
+          }
+          await api('/api/admin/banners', { method: 'POST', body: payload });
+          toast(`بنر شماره ${toPersianNum(slotIdx + 1)} ذخیره شد.`);
+          await loadAppState(true, true);
+        } catch (err) {
+          toast(err.message || 'خطا در ذخیره بنر');
+        } finally {
+          b.disabled = false;
+        }
+      };
+    });
+    document.querySelectorAll('[data-del-banner]').forEach((b) => {
+      b.onclick = async () => {
+        try {
+          await api(`/api/admin/banners/${encodeURIComponent(b.dataset.delBanner)}`, { method: 'DELETE' });
+          toast('بنر حذف شد.');
+          await loadAppState(true, true);
+        } catch (err) {
+          toast(err.message || 'خطا در حذف بنر');
+        }
+      };
+    });
 
     document.querySelectorAll('[data-approve-reg]').forEach((b) => {
       b.onclick = async () => {

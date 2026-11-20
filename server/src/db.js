@@ -355,6 +355,19 @@ async function initSchema() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
+    CREATE TABLE IF NOT EXISTS banners (
+      id TEXT PRIMARY KEY,
+      section TEXT NOT NULL,
+      slot_index INTEGER NOT NULL,
+      title TEXT NOT NULL DEFAULT '',
+      image_mime TEXT NOT NULL DEFAULT '',
+      image_data TEXT NOT NULL DEFAULT '',
+      link_type TEXT NOT NULL DEFAULT 'none',
+      link_target TEXT NOT NULL DEFAULT '',
+      updated_at BIGINT NOT NULL DEFAULT 0,
+      UNIQUE(section, slot_index)
+    );
+
     ALTER TABLE stores ADD COLUMN IF NOT EXISTS is_demo BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE mobiles ADD COLUMN IF NOT EXISTS is_demo BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE store_mobiles ADD COLUMN IF NOT EXISTS is_demo BOOLEAN NOT NULL DEFAULT FALSE;
@@ -696,6 +709,22 @@ function mapDeskRequest(r) {
   };
 }
 
+function mapBanner(r) {
+  const hasImage = Boolean(r.has_img || r.image_data);
+  const updatedAt = Number(r.updated_at || 0);
+  return {
+    id: r.id,
+    section: r.section,
+    slotIndex: Number(r.slot_index || 0),
+    title: r.title || '',
+    hasImage,
+    imageUrl: hasImage ? `/api/banners/${encodeURIComponent(r.id)}/image?v=${updatedAt}` : '',
+    linkType: r.link_type || 'none',
+    linkTarget: r.link_target || '',
+    updatedAt
+  };
+}
+
 module.exports = {
   pool,
   initSchema,
@@ -719,5 +748,6 @@ module.exports = {
   mapChat,
   mapForumPost,
   mapDeskRental,
-  mapDeskRequest
+  mapDeskRequest,
+  mapBanner
 };

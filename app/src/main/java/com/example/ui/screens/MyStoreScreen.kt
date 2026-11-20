@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -315,7 +316,7 @@ fun MyStoreScreen(
                 if (storeOffers.isEmpty()) {
                     item(key = "ms_mobs_empty") { BazmoEmptyState("هنوز گوشی‌ای برای این فروشگاه ثبت نشده است.") }
                 } else {
-                    items(storeOffers, key = { it.id }) { o ->
+                    itemsIndexed(storeOffers, key = { idx, o -> "ms_mob_${idx}_${o.id}" }) { _, o ->
                         val m = mobilesById[o.mobileId]
                         BazmoCard {
                             Text(
@@ -358,7 +359,7 @@ fun MyStoreScreen(
                 if (storeAccs.isEmpty()) {
                     item(key = "ms_accs_empty") { BazmoEmptyState("هنوز کالای جانبی برای این فروشگاه ثبت نشده است.") }
                 } else {
-                    items(storeAccs, key = { it.id }) { a ->
+                    itemsIndexed(storeAccs, key = { idx, a -> "ms_acc_${idx}_${a.id}" }) { _, a ->
                         BazmoCard {
                             BazmoBadge(a.cat, BadgeTone.BLUE)
                             Spacer(modifier = Modifier.height(4.dp))
@@ -398,7 +399,7 @@ fun MyStoreScreen(
                 if (storeInqs.isEmpty()) {
                     item(key = "ms_inq_empty") { BazmoEmptyState("هنوز استعلام موجودی برای فروشگاه شما ثبت نشده است.") }
                 } else {
-                    items(storeInqs, key = { it.id }) { q ->
+                    itemsIndexed(storeInqs, key = { idx, q -> "ms_inq_${idx}_${q.id}" }) { _, q ->
                         val tone = when {
                             q.status.contains("ناموجود") -> BadgeTone.RED
                             q.status.contains("موجود") -> BadgeTone.GREEN
@@ -431,7 +432,7 @@ fun MyStoreScreen(
                 if (storeOrders.isEmpty()) {
                     item(key = "ms_ord_empty") { BazmoEmptyState("سفارشی برای این فروشگاه ثبت نشده است.") }
                 } else {
-                    items(storeOrders, key = { it.id }) { o ->
+                    itemsIndexed(storeOrders, key = { idx, o -> "ms_ord_${idx}_${o.id}" }) { _, o ->
                         BazmoCard {
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text("${o.id} • ${o.userName}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold)

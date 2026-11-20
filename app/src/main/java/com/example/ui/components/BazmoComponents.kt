@@ -1,22 +1,24 @@
 package com.example.ui.components
 
+import android.graphics.BitmapFactory
+import android.util.LruCache
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -47,6 +49,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,6 +59,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -63,6 +69,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.BannerEntity
+import com.example.data.BazmoServerConfig
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.Request
 import com.example.ui.theme.AccentCyan
 import com.example.ui.theme.AccentCyanDark
 import com.example.ui.theme.BorderLight
@@ -129,16 +141,6 @@ fun BazmoCard(
     content: @Composable ColumnScope.() -> Unit
 ) {
     val shape = RoundedCornerShape(18.dp)
-    val animatedBorder by animateColorAsState(
-        targetValue = borderColor,
-        animationSpec = tween(160),
-        label = "cardBorder"
-    )
-    val animatedContainer by animateColorAsState(
-        targetValue = containerColor,
-        animationSpec = tween(160),
-        label = "cardContainer"
-    )
     val cardModifier = modifier
         .fillMaxWidth()
         .padding(bottom = 10.dp)
@@ -147,14 +149,12 @@ fun BazmoCard(
     Card(
         modifier = cardModifier,
         shape = shape,
-        colors = CardDefaults.cardColors(containerColor = animatedContainer),
+        colors = CardDefaults.cardColors(containerColor = containerColor),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        border = BorderStroke(borderWidth.dp, animatedBorder)
+        border = BorderStroke(borderWidth.dp, borderColor)
     ) {
         Column(
-            modifier = Modifier
-                .animateContentSize(animationSpec = spring(stiffness = Spring.StiffnessMediumLow))
-                .padding(14.dp),
+            modifier = Modifier.padding(14.dp),
             content = content
         )
     }
@@ -818,3 +818,195 @@ fun BazmoOrderStepper(status: String) {
         }
     }
 }
+
+private object BazmoBannerImageCache {
+    private val maxKb = ((Runtime.getRuntime().maxMemory() / 1024L) / 8L).toInt().coerceIn(4 * 1024, 24 * 1024)
+    private val cache = object : LruCache<String, ImageBitmap>(maxKb) {
+        override fun sizeOf(key: String, value: ImageBitmap): Int {
+            return ((value.width.toLong() * value.height.toLong() * 4L) / 1024L)
+                .toInt()
+                .coerceAtLeast(1)
+        }
+    }
+
+    fun get(key: String): ImageBitmap? = synchronized(cache) { cache.get(key) }
+    fun put(key: String, bmp: ImageBitmap) {
+        synchronized(cache) { cache.put(key, bmp) }
+    }
+}
+
+@Composable
+fun BazmoBannerImage(
+    imageUrl: String,
+    contentDescription: String,
+    modifier: Modifier = Modifier
+) {
+    val fullUrl = remember(imageUrl) {
+        val raw = imageUrl.trim()
+        when {
+            raw.isEmpty() -> ""
+            raw.startsWith("http://", ignoreCase = true) || raw.startsWith("https://", ignoreCase = true) -> raw
+            raw.startsWith("/") -> "${BazmoServerConfig.baseUrl()}$raw"
+            else -> "${BazmoServerConfig.baseUrl()}/$raw"
+        }
+    }
+    var bitmap by remember(fullUrl) {
+        mutableStateOf(if (fullUrl.isNotEmpty()) BazmoBannerImageCache.get(fullUrl) else null)
+    }
+
+    LaunchedEffect(fullUrl) {
+        if (fullUrl.isEmpty() || bitmap != null) return@LaunchedEffect
+        val loaded = withContext(Dispatchers.IO) {
+            try {
+                val req = Request.Builder().url(fullUrl).get().build()
+                BazmoServerConfig.okHttpClient.newCall(req).execute().use { res ->
+                    if (!res.isSuccessful) return@withContext null
+                    val bytes = res.body?.bytes() ?: return@withContext null
+                    if (bytes.isEmpty() || bytes.size > 5 * 1024 * 1024) return@withContext null
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                    var sample = 1
+                    val maxDim = 1080
+                    while (bounds.outWidth / sample > maxDim || bounds.outHeight / sample > maxDim) {
+                        sample *= 2
+                    }
+                    val opts = BitmapFactory.Options().apply { inSampleSize = sample.coerceAtLeast(1) }
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)?.asImageBitmap()
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Throwable) {
+                null
+            }
+        }
+        if (loaded != null) {
+            BazmoBannerImageCache.put(fullUrl, loaded)
+            bitmap = loaded
+        }
+    }
+
+    val currentBmp = bitmap
+    if (currentBmp != null) {
+        Image(
+            bitmap = currentBmp,
+            contentDescription = contentDescription,
+            contentScale = ContentScale.Crop,
+            modifier = modifier
+        )
+    } else {
+        Box(
+            modifier = modifier.background(
+                Brush.linearGradient(listOf(NavySoft, SoftSurface))
+            ),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "🖼️",
+                fontSize = 22.sp
+            )
+        }
+    }
+}
+
+@Composable
+fun BazmoPromoBannerGrid(
+    banners: List<BannerEntity>,
+    onBannerClick: (BannerEntity) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val activeBanners = remember(banners) {
+        banners.filter { it.hasImage && it.imageUrl.isNotBlank() }
+            .sortedBy { it.slotIndex }
+            .take(4)
+    }
+    if (activeBanners.isEmpty()) return
+
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(bottom = 10.dp)
+    ) {
+        val cols = if (maxWidth >= 640.dp) 4 else 2
+        val rows = remember(activeBanners, cols) { activeBanners.chunked(cols) }
+
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            rows.forEach { rowItems ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    rowItems.forEach { banner ->
+                        val isClickable = banner.linkType != "none" && banner.linkTarget.isNotBlank()
+                        val shape = RoundedCornerShape(14.dp)
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .aspectRatio(1.78f)
+                                .clip(shape)
+                                .border(1.dp, BorderLight, shape)
+                                .let { m ->
+                                    if (isClickable) m.clickable { onBannerClick(banner) } else m
+                                }
+                                .testTag("promo_banner_${banner.id}")
+                        ) {
+                            BazmoBannerImage(
+                                imageUrl = banner.imageUrl,
+                                contentDescription = banner.title.ifBlank { "بنر تبلیغاتی" },
+                                modifier = Modifier.fillMaxSize()
+                            )
+                            val actionBadge = when (banner.linkType) {
+                                "store" -> "🏪 مشاهده فروشگاه"
+                                "url" -> "🌐 مشاهده سایت"
+                                else -> ""
+                            }
+                            if (banner.title.isNotBlank() || (isClickable && actionBadge.isNotEmpty())) {
+                                Row(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomCenter)
+                                        .fillMaxWidth()
+                                        .background(
+                                            Brush.verticalGradient(
+                                                listOf(Color.Transparent, Color.Black.copy(alpha = 0.72f))
+                                            )
+                                        )
+                                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = banner.title.ifBlank { actionBadge },
+                                        color = Color.White,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    if (banner.title.isNotBlank() && isClickable && actionBadge.isNotEmpty()) {
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Surface(
+                                            color = GoldAccent,
+                                            shape = RoundedCornerShape(6.dp)
+                                        ) {
+                                            Text(
+                                                text = if (banner.linkType == "store") "فروشگاه" else "لینک",
+                                                color = Color(0xFF111827),
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Black,
+                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    repeat(cols - rowItems.size) {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+    }
+}
+

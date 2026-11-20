@@ -221,6 +221,27 @@ function createApiRouter(broadcastSync = () => {}, sseClients = new Set(), getSt
     }
   });
 
+  router.get('/banners/:id/image', async (req, res, next) => {
+    try {
+      const id = String(req.params.id || '').trim();
+      if (!id) return res.status(404).end();
+      const { rows } = await db.pool.query(
+        'SELECT image_mime, image_data FROM banners WHERE id = $1 LIMIT 1',
+        [id]
+      );
+      if (rows.length === 0 || !rows[0].image_data) {
+        return res.status(404).end();
+      }
+      const mime = String(rows[0].image_mime || 'image/jpeg');
+      const buf = Buffer.from(String(rows[0].image_data), 'base64');
+      res.setHeader('Content-Type', mime.startsWith('image/') ? mime : 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      return res.send(buf);
+    } catch (err) {
+      return next(err);
+    }
+  });
+
   // ==================== AUTHENTICATED STATE ====================
 
   router.use(authenticateMiddleware, resolveLiveRole);
@@ -366,7 +387,10 @@ function createApiRouter(broadcastSync = () => {}, sseClients = new Set(), getSt
               `SELECT * FROM desk_rentals WHERE (status = 'approved' OR owner_id = $1) ${demoClause} ORDER BY sort_order DESC`,
               [uid]
             ),
-        deskRequests: db.pool.query(`SELECT * FROM desk_requests ${demoWhere} ORDER BY sort_order DESC`)
+        deskRequests: db.pool.query(`SELECT * FROM desk_requests ${demoWhere} ORDER BY sort_order DESC`),
+        banners: db.pool.query(
+          "SELECT id, section, slot_index, title, (image_data <> '') AS has_img, image_mime, link_type, link_target, updated_at FROM banners ORDER BY section ASC, slot_index ASC"
+        )
       };
 
       const keys = Object.keys(queries);
@@ -399,7 +423,8 @@ function createApiRouter(broadcastSync = () => {}, sseClients = new Set(), getSt
         chatThreads: raw.chatThreads.map(db.mapChat),
         forumPosts: raw.forumPosts.map(db.mapForumPost),
         deskRentals: raw.deskRentals.map(db.mapDeskRental),
-        deskRequests: raw.deskRequests.map(db.mapDeskRequest)
+        deskRequests: raw.deskRequests.map(db.mapDeskRequest),
+        banners: raw.banners.map(db.mapBanner)
       });
     } catch (err) {
       return next(err);
@@ -443,16 +468,26 @@ function createApiRouter(broadcastSync = () => {}, sseClients = new Set(), getSt
         return res.status(400).json({ error: 'نام و نام خانوادگی الزامی است.' });
       }
       const phone = String(req.body?.phone || '').trim().slice(0, 40);
-      const province = String(req.body?.province || 'تهران').trim().slice(0, 80) || 'تهران';
-      const city = String(req.body?.city || 'تهران').trim().slice(0, 80) || 'تهران';
-      const region = String(req.body?.region || 'همه مناطق').trim().slice(0, 80) || 'همه مناطق';
 
-      await db.pool.query(
-        `UPDATE users
-         SET full_name = $1, phone = $2, province = $3, city = $4, region = $5, updated_at = NOW()
-         WHERE id = $6`,
-        [fullName, phone, province, city, region, req.auth.uid]
-      );
+      // Users cannot alter their registered province/city/region; only Admin can edit registered addresses.
+      if (req.isAdmin && req.body?.province && req.body?.city) {
+        const province = String(req.body.province).trim().slice(0, 80) || 'تهران';
+        const city = String(req.body.city).trim().slice(0, 80) || 'تهران';
+        const region = String(req.body?.region || 'همه مناطق').trim().slice(0, 80) || 'همه مناطق';
+        await db.pool.query(
+          `UPDATE users
+           SET full_name = $1, phone = $2, province = $3, city = $4, region = $5, updated_at = NOW()
+           WHERE id = $6`,
+          [fullName, phone, province, city, region, req.auth.uid]
+        );
+      } else {
+        await db.pool.query(
+          `UPDATE users
+           SET full_name = $1, phone = $2, updated_at = NOW()
+           WHERE id = $3`,
+          [fullName, phone, req.auth.uid]
+        );
+      }
       broadcastSync(['users']);
       return res.json({ ok: true });
     } catch (err) {
@@ -704,6 +739,53 @@ function createApiRouter(broadcastSync = () => {}, sseClients = new Set(), getSt
     }
   });
 
+  router.patch('/admin/users/:id/location', requireAdmin, async (req, res, next) => {
+    const client = await db.pool.connect();
+    try {
+      const targetId = String(req.params.id || '').trim();
+      const normEmail = normalizeEmail(req.body?.email);
+      const province = String(req.body?.province || 'تهران').trim().slice(0, 80) || 'تهران';
+      const city = String(req.body?.city || 'تهران').trim().slice(0, 80) || 'تهران';
+      const region = String(req.body?.region || 'همه مناطق').trim().slice(0, 80) || 'همه مناطق';
+      const fullName = req.body?.fullName != null ? String(req.body.fullName).trim().slice(0, 120) : null;
+      const phone = req.body?.phone != null ? String(req.body.phone).trim().slice(0, 40) : null;
+
+      await client.query('BEGIN');
+      await client.query(
+        `UPDATE users
+         SET province = $1,
+             city = $2,
+             region = $3,
+             full_name = COALESCE(NULLIF($4, ''), full_name),
+             phone = COALESCE($5, phone),
+             updated_at = NOW()
+         WHERE id = $6 OR uid = $6 OR ($7 <> '' AND LOWER(email) = $7)`,
+        [province, city, region, fullName || '', phone, targetId, normEmail]
+      );
+      if (isValidEmailFormat(normEmail)) {
+        await client.query(
+          `UPDATE user_invites
+           SET province = $1,
+               city = $2,
+               region = $3,
+               full_name = COALESCE(NULLIF($4, ''), full_name),
+               phone = COALESCE($5, phone),
+               updated_at = NOW()
+           WHERE email = $6`,
+          [province, city, region, fullName || '', phone, normEmail]
+        );
+      }
+      await client.query('COMMIT');
+      broadcastSync(['users']);
+      return res.json({ ok: true });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      return next(err);
+    } finally {
+      client.release();
+    }
+  });
+
   router.patch('/admin/users/:id/password', requireAdmin, async (req, res, next) => {
     try {
       const targetId = String(req.params.id || '').trim();
@@ -892,6 +974,107 @@ function createApiRouter(broadcastSync = () => {}, sseClients = new Set(), getSt
       const counts = await writeDemoDataset(req.auth.uid);
       broadcastSync(['all']);
       return res.json({ ok: true, counts });
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+  // ==================== PROMO BANNERS (4 PER SECTION) ====================
+
+  router.post('/admin/banners', requireAdmin, async (req, res, next) => {
+    try {
+      const section = String(req.body?.section || '').trim();
+      const slotIndex = Number(req.body?.slotIndex);
+      if (!['mobile', 'software', 'acc', 'hw'].includes(section)) {
+        return res.status(400).json({ error: 'بخش بنر نامعتبر است.' });
+      }
+      if (!Number.isInteger(slotIndex) || slotIndex < 0 || slotIndex > 3) {
+        return res.status(400).json({ error: 'شماره کاشی بنر باید بین ۰ تا ۳ باشد.' });
+      }
+      const id = `bn_${section}_${slotIndex}`;
+      const title = String(req.body?.title || '').trim().slice(0, 120);
+      const rawLinkType = String(req.body?.linkType || 'none').trim();
+      const linkType = ['none', 'url', 'store'].includes(rawLinkType) ? rawLinkType : 'none';
+      let linkTarget = String(req.body?.linkTarget || '').trim().slice(0, 500);
+      if (linkType === 'url' && linkTarget) {
+        if (/^(javascript|data|vbscript):/i.test(linkTarget)) {
+          return res.status(400).json({ error: 'آدرس لینک نامعتبر است.' });
+        }
+        if (!/^https?:\/\//i.test(linkTarget)) {
+          linkTarget = `https://${linkTarget}`;
+        }
+      } else if (linkType === 'none') {
+        linkTarget = '';
+      }
+
+      const keepExistingImage = Boolean(req.body?.keepExistingImage);
+      const rawImageInput = String(req.body?.imageData || '').trim();
+      let imageMime = String(req.body?.imageMime || 'image/jpeg').trim();
+      let base64Data = '';
+
+      if (rawImageInput) {
+        const match = rawImageInput.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/s);
+        if (match) {
+          imageMime = match[1].toLowerCase();
+          base64Data = match[2].replace(/\s+/g, '');
+        } else {
+          base64Data = rawImageInput.replace(/\s+/g, '');
+        }
+        if (!['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'].includes(imageMime)) {
+          imageMime = 'image/jpeg';
+        }
+        const byteLength = Buffer.from(base64Data, 'base64').length;
+        if (byteLength > 2.5 * 1024 * 1024) {
+          return res.status(400).json({ error: 'حجم تصویر بنر نباید بیشتر از ۲.۵ مگابایت باشد.' });
+        }
+      }
+
+      if (!base64Data && !keepExistingImage) {
+        return res.status(400).json({ error: 'لطفاً تصویر بنر را انتخاب کنید.' });
+      }
+
+      const updatedAt = Date.now();
+      if (base64Data) {
+        await db.pool.query(
+          `INSERT INTO banners (id, section, slot_index, title, image_mime, image_data, link_type, link_target, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+           ON CONFLICT (section, slot_index) DO UPDATE SET
+             title = EXCLUDED.title,
+             image_mime = EXCLUDED.image_mime,
+             image_data = EXCLUDED.image_data,
+             link_type = EXCLUDED.link_type,
+             link_target = EXCLUDED.link_target,
+             updated_at = EXCLUDED.updated_at`,
+          [id, section, slotIndex, title, imageMime, base64Data, linkType, linkTarget, updatedAt]
+        );
+      } else {
+        const upd = await db.pool.query(
+          `UPDATE banners
+           SET title = $1, link_type = $2, link_target = $3, updated_at = $4
+           WHERE id = $5`,
+          [title, linkType, linkTarget, updatedAt, id]
+        );
+        if (upd.rowCount === 0) {
+          return res.status(400).json({ error: 'ابتدا یک تصویر برای این کاشی انتخاب کنید.' });
+        }
+      }
+
+      const { rows } = await db.pool.query(
+        "SELECT id, section, slot_index, title, (image_data <> '') AS has_img, image_mime, link_type, link_target, updated_at FROM banners WHERE id = $1",
+        [id]
+      );
+      broadcastSync(['banners']);
+      return res.json({ ok: true, banner: db.mapBanner(rows[0]) });
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+  router.delete('/admin/banners/:id', requireAdmin, async (req, res, next) => {
+    try {
+      await db.pool.query('DELETE FROM banners WHERE id = $1', [String(req.params.id || '').trim()]);
+      broadcastSync(['banners']);
+      return res.json({ ok: true });
     } catch (err) {
       return next(err);
     }

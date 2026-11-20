@@ -5,6 +5,7 @@ import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.Lifecycle
 
 object BazmoBiometricHelper {
     private const val ALLOWED_AUTHENTICATORS =
@@ -12,8 +13,10 @@ object BazmoBiometricHelper {
             BiometricManager.Authenticators.BIOMETRIC_WEAK
 
     fun canAuthenticate(context: Context): Boolean {
-        val manager = BiometricManager.from(context)
-        return manager.canAuthenticate(ALLOWED_AUTHENTICATORS) == BiometricManager.BIOMETRIC_SUCCESS
+        return runCatching {
+            val manager = BiometricManager.from(context)
+            manager.canAuthenticate(ALLOWED_AUTHENTICATORS) == BiometricManager.BIOMETRIC_SUCCESS
+        }.getOrDefault(false)
     }
 
     fun promptBiometricUnlock(
@@ -23,6 +26,11 @@ object BazmoBiometricHelper {
         onCancelledOrFallback: () -> Unit = {},
         onError: (String) -> Unit = {}
     ) {
+        if (activity.isFinishing || activity.isDestroyed ||
+            !activity.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+        ) {
+            return
+        }
         if (!canAuthenticate(activity)) {
             onError("اثر انگشت روی این دستگاه فعال یا ثبت نشده است.")
             return
@@ -59,20 +67,24 @@ object BazmoBiometricHelper {
             }
         }
 
-        val prompt = BiometricPrompt(activity, executor, callback)
-        val subtitleText = if (accountLabel.isNotBlank()) {
-            "حساب ذخیره‌شده: $accountLabel"
-        } else {
-            "ورود به آخرین حساب کاربری فعال"
-        }
-        val promptInfo = BiometricPrompt.PromptInfo.Builder()
-            .setTitle("ورود با اثر انگشت به بازمو")
-            .setSubtitle(subtitleText)
-            .setAllowedAuthenticators(ALLOWED_AUTHENTICATORS)
-            .setConfirmationRequired(false)
-            .setNegativeButtonText("استفاده از رمز عبور")
-            .build()
+        try {
+            val prompt = BiometricPrompt(activity, executor, callback)
+            val subtitleText = if (accountLabel.isNotBlank()) {
+                "حساب ذخیره‌شده: $accountLabel"
+            } else {
+                "ورود به آخرین حساب کاربری فعال"
+            }
+            val promptInfo = BiometricPrompt.PromptInfo.Builder()
+                .setTitle("ورود با اثر انگشت به بازمو")
+                .setSubtitle(subtitleText)
+                .setAllowedAuthenticators(ALLOWED_AUTHENTICATORS)
+                .setConfirmationRequired(false)
+                .setNegativeButtonText("استفاده از رمز عبور")
+                .build()
 
-        prompt.authenticate(promptInfo)
+            prompt.authenticate(promptInfo)
+        } catch (_: Exception) {
+            onError("حسگر اثر انگشت در این لحظه در دسترس نیست. لطفاً با رمز عبور وارد شوید.")
+        }
     }
 }

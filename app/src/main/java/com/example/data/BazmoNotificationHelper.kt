@@ -188,7 +188,7 @@ object BazmoNotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         return NotificationCompat.Builder(context, REALTIME_CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_bazmo)
             .setContentTitle("بازمو • دریافت آنی اعلان‌ها فعال است")
             .setContentText("در انتظار اعلان‌ها و پیام‌های جدید صنفی")
             .setPriority(NotificationCompat.PRIORITY_MIN)
@@ -290,7 +290,7 @@ object BazmoNotificationHelper {
             )
 
             val built = NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(R.mipmap.ic_launcher)
+                .setSmallIcon(R.drawable.ic_stat_bazmo)
                 .setContentTitle(notif.title.ifBlank { "اعلان جدید بازمو" })
                 .setContentText(notif.body)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(notif.body))

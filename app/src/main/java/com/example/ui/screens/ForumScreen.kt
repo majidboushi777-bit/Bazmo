@@ -19,12 +19,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -116,7 +118,9 @@ fun ForumScreen(
     if (fs.threadId != null) {
         val post = state.db.forumPosts.find { it.id == fs.threadId }
         if (post == null) {
-            viewModel.setForumThread(board, null)
+            LaunchedEffect(fs.threadId) {
+                viewModel.setForumThread(board, null)
+            }
             return
         }
         BackHandler { viewModel.setForumThread(board, null) }
@@ -268,7 +272,7 @@ fun ForumScreen(
                 BazmoEmptyState("پستی در این موضوع یافت نشد.")
             }
         } else {
-            items(filtered, key = { it.id }) { post ->
+            itemsIndexed(filtered, key = { idx, post -> "fpost_${idx}_${post.id}" }) { _, post ->
                 ForumPostCard(
                     post = post,
                     currentUid = state.currentUid,
@@ -560,7 +564,7 @@ private fun ForumThreadDetail(
                 BazmoEmptyState("هنوز دیدگاهی ثبت نشده است.")
             }
         } else {
-            items(post.comments, key = { it.id }) { comment ->
+            itemsIndexed(post.comments, key = { idx, comment -> "fcmt_${idx}_${comment.id}" }) { _, comment ->
                 CommentItemCard(
                     post = post,
                     comment = comment,

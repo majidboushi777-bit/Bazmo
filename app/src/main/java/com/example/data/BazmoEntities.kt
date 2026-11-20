@@ -687,3 +687,17 @@ data class DeskRequestEntity(
     )
 }
 
+@Keep
+data class BannerEntity(
+    val id: String = "",
+    val section: String = "mobile",
+    val slotIndex: Int = 0,
+    val title: String = "",
+    val hasImage: Boolean = false,
+    val imageUrl: String = "",
+    val linkType: String = "none",
+    val linkTarget: String = "",
+    val updatedAt: Long = 0L
+)
+
+

@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -223,7 +224,7 @@ fun DeskRentalScreen(
                     BazmoEmptyState("در این دسته‌بندی هنوز میز کاری ثبت نشده است.")
                 }
             } else {
-                items(filteredRentals.list, key = { it.id }) { d ->
+                itemsIndexed(filteredRentals.list, key = { idx, d -> "drent_${idx}_${d.id}" }) { _, d ->
                     val statusLabel = when (d.status) {
                         "approved" -> "تاییدشده"
                         "rejected" -> "ردشده"
@@ -350,7 +351,7 @@ fun DeskRentalScreen(
                     BazmoEmptyState("درخواستی در این دسته‌بندی ثبت نشده است.")
                 }
             } else {
-                items(filteredRequests.list, key = { it.id }) { r ->
+                itemsIndexed(filteredRequests.list, key = { idx, r -> "dreq_${idx}_${r.id}" }) { _, r ->
                     val statusLabel = when (r.status) {
                         "matched" -> "توافق شده"
                         "closed" -> "بسته شده"

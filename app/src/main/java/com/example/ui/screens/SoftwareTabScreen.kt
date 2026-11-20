@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -32,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -43,6 +45,7 @@ import com.example.ui.components.BazmoCard
 import com.example.ui.components.BazmoEmptyState
 import com.example.ui.components.BazmoGoldButton
 import com.example.ui.components.BazmoPrimaryButton
+import com.example.ui.components.BazmoPromoBannerGrid
 import com.example.ui.components.BazmoSearchBar
 import com.example.ui.components.BazmoSectionHeader
 import com.example.ui.components.BazmoSquareTile
@@ -65,6 +68,8 @@ fun SoftwareTabScreen(
     viewModel: BazmoViewModel
 ) {
     val sw = state.session.swView
+    val uriHandler = LocalUriHandler.current
+    val swBanners = remember(state.db.banners) { state.bannersForSection("software") }
 
     BackHandler(enabled = sw.mode != SoftwareSubMode.HOME && sw.mode != SoftwareSubMode.FORUM) {
         viewModel.setSwMode(SoftwareSubMode.HOME)
@@ -186,7 +191,7 @@ fun SoftwareTabScreen(
                             if (list.isEmpty()) {
                                 item(key = "sw_tut_empty") { BazmoEmptyState("آموزشی یافت نشد.") }
                             } else {
-                                items(tutRows, key = { row -> "tut_row_" + row.joinToString("_") { it.id } }) { rowItems ->
+                                itemsIndexed(tutRows, key = { idx, row -> "tut_row_${idx}_" + row.joinToString("_") { it.id } }) { _, rowItems ->
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -282,7 +287,7 @@ fun SoftwareTabScreen(
                         if (reqs.isEmpty()) {
                             item(key = "sw_req_empty") { BazmoEmptyState("درخواستی یافت نشد.") }
                         } else {
-                            items(reqRows, key = { row -> "sw_req_row_" + row.joinToString("_") { it.id } }) { rowItems ->
+                            itemsIndexed(reqRows, key = { idx, row -> "sw_req_row_${idx}_" + row.joinToString("_") { it.id } }) { _, rowItems ->
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -361,7 +366,7 @@ fun SoftwareTabScreen(
                         if (boxes.isEmpty()) {
                             item(key = "sw_box_empty") { BazmoEmptyState("باکسی یافت نشد.") }
                         } else {
-                            items(boxRows, key = { row -> "sw_box_row_" + row.joinToString("_") { it.id } }) { rowItems ->
+                            itemsIndexed(boxRows, key = { idx, row -> "sw_box_row_${idx}_" + row.joinToString("_") { it.id } }) { _, rowItems ->
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -439,6 +444,19 @@ fun SoftwareTabScreen(
                                 modifier = Modifier.padding(bottom = 8.dp)
                             )
                         }
+                        if (swBanners.isNotEmpty()) {
+                            item(key = "sw_promo_banners") {
+                                BazmoPromoBannerGrid(
+                                    banners = swBanners,
+                                    onBannerClick = { banner ->
+                                        viewModel.openPromoBanner(banner) { url ->
+                                            runCatching { uriHandler.openUri(url) }
+                                                .onFailure { viewModel.showToast("امکان باز کردن لینک وجود ندارد") }
+                                        }
+                                    }
+                                )
+                            }
+                        }
                         if (!state.canAccessSoftwareSpecialized) {
                             item(key = "sw_home_notice") {
                                 BazmoWarrantyBox(
@@ -450,7 +468,7 @@ fun SoftwareTabScreen(
                         item(key = "sw_home_hdr") {
                             BazmoSectionHeader("کاشی مشکلات نرم‌افزاری")
                         }
-                        items(rows, key = { row -> "sw_prob_row_" + row.joinToString("_") { it.id } }) { rowItems ->
+                        itemsIndexed(rows, key = { idx, row -> "sw_prob_row_${idx}_" + row.joinToString("_") { it.id } }) { _, rowItems ->
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()

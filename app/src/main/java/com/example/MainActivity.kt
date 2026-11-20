@@ -1,6 +1,8 @@
 package com.example
 
 import android.Manifest
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.graphics.Color as AndroidColor
 import android.os.Build
@@ -155,6 +157,7 @@ fun BazmoAppRoot(
     var prefillRegEmail by remember { mutableStateOf("") }
     var prefillRegName by remember { mutableStateOf("") }
     var openRegisterOnLogin by remember { mutableStateOf(false) }
+    var allowAutoBiometricPrompt by remember { mutableStateOf(true) }
 
     LaunchedEffect(Unit) {
         BazmoAuthManager.attemptAutoSignIn(context)
@@ -162,7 +165,7 @@ fun BazmoAppRoot(
 
     val triggerBiometricUnlock: () -> Unit = {
         val account = BazmoAuthManager.savedAccount(context)
-        val activity = context as? FragmentActivity
+        val activity = context.findFragmentActivity()
         if (account != null && activity != null && !isSigningIn) {
             val label = listOf(account.displayName, account.email)
                 .filter { it.isNotBlank() }
@@ -201,7 +204,14 @@ fun BazmoAppRoot(
                 autoOpenRegister = openRegisterOnLogin,
                 savedBiometricAccount = savedBiometricAccount,
                 canUseBiometric = canUseBiometric,
+                autoPromptBiometric = allowAutoBiometricPrompt,
                 onBiometricSignIn = triggerBiometricUnlock,
+                onForgetSavedAccount = {
+                    authError = null
+                    scope.launch {
+                        BazmoAuthManager.signOut(context, forgetSavedAccount = true)
+                    }
+                },
                 onConsumeAutoOpenRegister = { openRegisterOnLogin = false },
                 onPasswordSignIn = { emailInput, passwordInput ->
                     if (!isSigningIn) {
@@ -236,7 +246,9 @@ fun BazmoAppRoot(
                     user = activeUser,
                     openNotificationsPending = openNotificationsPending,
                     onConsumeOpenNotifications = onConsumeOpenNotifications,
+                    onManualSignOut = { allowAutoBiometricPrompt = false },
                     onOpenRegistrationForm = { email, name ->
+                        allowAutoBiometricPrompt = false
                         prefillRegEmail = email
                         prefillRegName = name
                         openRegisterOnLogin = true
@@ -252,6 +264,7 @@ private fun BazmoAuthenticatedRoot(
     user: BazmoSessionUser,
     openNotificationsPending: Boolean,
     onConsumeOpenNotifications: () -> Unit,
+    onManualSignOut: () -> Unit,
     onOpenRegistrationForm: (email: String, name: String) -> Unit
 ) {
     val context = LocalContext.current
@@ -286,7 +299,9 @@ private fun BazmoAuthenticatedRoot(
     }
 
     LaunchedEffect(user.uid) {
-        BazmoAuthManager.refreshActiveSession(context)
+        if (BazmoAuthManager.peekCachedAuthResponse(user.uid, user.token) == null) {
+            BazmoAuthManager.refreshActiveSession(context)
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             !BazmoNotificationHelper.hasNotificationPermission(context)
         ) {
@@ -315,6 +330,7 @@ private fun BazmoAuthenticatedRoot(
     }
 
     val onSignOut: () -> Unit = {
+        onManualSignOut()
         scope.launch {
             BazmoRealtimeNotifService.stop(context)
             BazmoNotificationHelper.clearBackgroundConfig(context)
@@ -444,7 +460,7 @@ private fun BazmoAuthenticatedRoot(
                                                 BazmoRealtimeNotifService.stop(context)
                                                 BazmoNotificationHelper.clearBackgroundConfig(context)
                                                 BazmoNotificationHelper.cancelBackgroundCheck(context)
-                                                BazmoAuthManager.signOut(context) {
+                                                BazmoAuthManager.signOut(context, forgetSavedAccount = true) {
                                                     viewModel.detachListeners()
                                                     onOpenRegistrationForm(em, nm)
                                                 }
@@ -546,4 +562,10 @@ private fun BazmoAuthenticatedRoot(
             }
         }
     }
+}
+
+private tailrec fun Context.findFragmentActivity(): FragmentActivity? = when (this) {
+    is FragmentActivity -> this
+    is ContextWrapper -> baseContext.findFragmentActivity()
+    else -> null
 }

@@ -78,6 +78,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.withResumed
 import com.example.R
 import com.example.data.BazmoLocations
 import com.example.data.BazmoRepository
@@ -121,7 +124,9 @@ fun LoginScreen(
     autoOpenRegister: Boolean = false,
     savedBiometricAccount: BazmoSessionUser? = null,
     canUseBiometric: Boolean = false,
+    autoPromptBiometric: Boolean = true,
     onBiometricSignIn: () -> Unit = {},
+    onForgetSavedAccount: () -> Unit = {},
     onConsumeAutoOpenRegister: () -> Unit = {},
     onPasswordSignIn: (email: String, password: String) -> Unit = { _, _ -> },
     onGoogleSignIn: () -> Unit = {}
@@ -135,10 +140,15 @@ fun LoginScreen(
         mutableStateOf(false)
     }
 
-    LaunchedEffect(savedBiometricAccount?.uid, canUseBiometric) {
-        if (savedBiometricAccount != null && canUseBiometric && !hasAutoPromptedBiometric && !isLoading) {
-            hasAutoPromptedBiometric = true
-            onBiometricSignIn()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(savedBiometricAccount?.uid, canUseBiometric, autoPromptBiometric, lifecycleOwner) {
+        if (savedBiometricAccount != null && canUseBiometric && autoPromptBiometric && !hasAutoPromptedBiometric && !isLoading) {
+            lifecycleOwner.lifecycle.withResumed {
+                if (!hasAutoPromptedBiometric && !isLoading) {
+                    hasAutoPromptedBiometric = true
+                    onBiometricSignIn()
+                }
+            }
         }
     }
 
@@ -393,6 +403,7 @@ fun LoginScreen(
                                 canUseBiometric = canUseBiometric,
                                 enabled = !isLoading,
                                 onUnlockClick = onBiometricSignIn,
+                                onForgetAccount = onForgetSavedAccount,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(bottom = 14.dp)
@@ -972,6 +983,7 @@ private fun AppleGlassBiometricCard(
     canUseBiometric: Boolean,
     enabled: Boolean,
     onUnlockClick: () -> Unit,
+    onForgetAccount: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val shape = RoundedCornerShape(22.dp)
@@ -1097,7 +1109,7 @@ private fun AppleGlassBiometricCard(
                     }
                 }
                 Text(
-                    text = "تا زمان خروج از حساب، ورود بعدی با اثر انگشت انجام می‌شود.",
+                    text = "با خروج عادی از برنامه، ورود بعدی با یک لمس اثر انگشت در دسترس است.",
                     style = MaterialTheme.typography.labelSmall,
                     color = TextMuted,
                     textAlign = TextAlign.Center,
@@ -1109,6 +1121,21 @@ private fun AppleGlassBiometricCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = TextMuted,
                     textAlign = TextAlign.Center
+                )
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable(enabled = enabled, onClick = onForgetAccount)
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                    .testTag("forget_saved_account_button")
+            ) {
+                Text(
+                    text = "تغییر یا حذف حساب ذخیره‌شده",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = Navy
                 )
             }
         }

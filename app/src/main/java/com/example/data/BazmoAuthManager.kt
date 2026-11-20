@@ -66,6 +66,16 @@ object BazmoAuthManager {
     private val _savedAccountFlow = MutableStateFlow<BazmoSessionUser?>(null)
     @Volatile
     private var prefsLoaded = false
+    @Volatile
+    private var cachedAuthResponse: Pair<String, BazmoAuthResponse>? = null
+
+    fun peekCachedAuthResponse(uid: String, token: String): BazmoAuthResponse? {
+        val entry = cachedAuthResponse ?: return null
+        if (entry.first == token && entry.second.uid == uid) {
+            return entry.second
+        }
+        return null
+    }
 
     private fun ensureLoaded(context: Context) {
         if (!prefsLoaded) {
@@ -131,6 +141,7 @@ object BazmoAuthManager {
                 isAdmin = resp.isAdmin,
                 isEmailVerified = resp.emailVerified
             )
+            cachedAuthResponse = refreshed.token to resp
             saveToPrefs(context.applicationContext, refreshed)
             _savedAccountFlow.value = refreshed
             if (_sessionFlow.value?.uid == refreshed.uid) {
@@ -140,6 +151,7 @@ object BazmoAuthManager {
         }
         val err = verifyRes.exceptionOrNull()
         if (err is BazmoApiException && err.statusCode == 401) {
+            cachedAuthResponse = null
             clearPrefs(context.applicationContext)
             _savedAccountFlow.value = null
             _sessionFlow.value = null
@@ -163,6 +175,7 @@ object BazmoAuthManager {
         synchronized(this) {
             _sessionFlow.value = null
             _savedAccountFlow.value = null
+            cachedAuthResponse = null
             prefsLoaded = false
         }
     }
@@ -314,6 +327,7 @@ object BazmoAuthManager {
             isAdmin = parsed.isAdmin,
             isEmailVerified = parsed.emailVerified
         )
+        cachedAuthResponse = session.token to parsed
         saveToPrefs(context.applicationContext, session)
         prefsLoaded = true
         _savedAccountFlow.value = session
@@ -324,6 +338,7 @@ object BazmoAuthManager {
     suspend fun signOut(
         context: Context,
         clearCredentialManager: Boolean = true,
+        forgetSavedAccount: Boolean = false,
         beforeAuthSignOut: suspend () -> Unit = {}
     ) = withContext(NonCancellable) {
         try {
@@ -331,9 +346,17 @@ object BazmoAuthManager {
         } catch (e: Exception) {
             Log.w("BazmoAuth", "Error during pre-signOut cleanup", e)
         }
-        clearPrefs(context.applicationContext)
+        cachedAuthResponse = null
         prefsLoaded = true
-        _savedAccountFlow.value = null
+        if (forgetSavedAccount) {
+            clearPrefs(context.applicationContext)
+            _savedAccountFlow.value = null
+        } else {
+            // Keep saved account in prefs & _savedAccountFlow so fingerprint login button stays ready
+            if (_savedAccountFlow.value == null) {
+                _savedAccountFlow.value = readFromPrefs(context.applicationContext)
+            }
+        }
         _sessionFlow.value = null
         if (clearCredentialManager) {
             try {

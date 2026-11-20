@@ -36,19 +36,8 @@ class BazmoRealtimeNotifService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) {
-            stopGracefully()
-            return START_NOT_STICKY
-        }
-
-        val cfg = BazmoNotificationHelper.loadBackgroundConfig(applicationContext)
-        if (cfg == null || !BazmoNotificationHelper.isRealtimeServiceEnabled(applicationContext)) {
-            stopGracefully()
-            return START_NOT_STICKY
-        }
-
         val notification = BazmoNotificationHelper.buildRealtimeServiceNotification(applicationContext)
-        try {
+        val startedForeground = try {
             val fgType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
             } else {
@@ -60,9 +49,25 @@ class BazmoRealtimeNotifService : Service() {
                 notification,
                 fgType
             )
+            true
         } catch (_: Exception) {
+            false
+        }
+
+        if (!startedForeground) {
             BazmoNotificationHelper.scheduleBackgroundCheck(applicationContext)
-            stopSelf()
+            runCatching { stopSelf() }
+            return START_NOT_STICKY
+        }
+
+        if (intent?.action == ACTION_STOP) {
+            stopGracefully()
+            return START_NOT_STICKY
+        }
+
+        val cfg = BazmoNotificationHelper.loadBackgroundConfig(applicationContext)
+        if (cfg == null || !BazmoNotificationHelper.isRealtimeServiceEnabled(applicationContext)) {
+            stopGracefully()
             return START_NOT_STICKY
         }
 
@@ -211,8 +216,8 @@ class BazmoRealtimeNotifService : Service() {
         wsLoopJob?.cancel()
         pollLoopJob?.cancel()
         configWatchJob?.cancel()
-        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
-        stopSelf()
+        runCatching { ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE) }
+        runCatching { stopSelf() }
     }
 
     override fun onDestroy() {

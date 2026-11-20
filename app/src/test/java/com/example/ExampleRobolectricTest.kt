@@ -3,6 +3,7 @@ package com.example
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.BackgroundNotifConfig
+import com.example.data.BannerEntity
 import com.example.data.BazmoAuthManager
 import com.example.data.BazmoDbState
 import com.example.data.BazmoLocations
@@ -33,6 +34,7 @@ import com.example.data.isValidEmailFormat
 import com.example.data.normalizeEmail
 import com.example.viewmodel.BazmoModal
 import com.example.viewmodel.BazmoSessionState
+import com.example.viewmodel.BazmoUiState
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -450,8 +452,14 @@ class ExampleRobolectricTest {
         assertEquals("latest@bazmo.ir", BazmoAuthManager.savedAccount(context)?.email)
         assertEquals("u_bio_2", BazmoAuthManager.unlockSavedAccountWithBiometric(context).getOrThrow().uid)
 
-        // Explicit signOut clears both active and saved biometric accounts
+        // Normal signOut clears active session while keeping saved biometric account ready
         BazmoAuthManager.signOut(context, clearCredentialManager = false)
+        assertNull(BazmoAuthManager.currentSession(context))
+        assertEquals("u_bio_2", BazmoAuthManager.savedAccount(context)?.uid)
+        assertTrue(BazmoAuthManager.unlockSavedAccountWithBiometric(context).isSuccess)
+
+        // Explicit forgetSavedAccount=true clears both active and saved biometric accounts
+        BazmoAuthManager.signOut(context, clearCredentialManager = false, forgetSavedAccount = true)
         assertNull(BazmoAuthManager.currentSession(context))
         assertNull(BazmoAuthManager.savedAccount(context))
         assertTrue(BazmoAuthManager.unlockSavedAccountWithBiometric(context).isFailure)
@@ -569,6 +577,36 @@ class ExampleRobolectricTest {
         assertEquals(
             com.example.ui.theme.BazmoThemeMode.LIGHT,
             com.example.ui.theme.BazmoThemeManager.modeFlow(context).value
+        )
+    }
+
+    @Test
+    fun `promo banners filter by section, require image, and sort by slotIndex`() {
+        val banners = listOf(
+            BannerEntity(id = "b2", section = "mobile", slotIndex = 2, title = "B2", hasImage = true, imageUrl = "/api/banners/b2/image"),
+            BannerEntity(id = "b0", section = "mobile", slotIndex = 0, title = "B0", hasImage = true, imageUrl = "/api/banners/b0/image"),
+            BannerEntity(id = "b1_empty", section = "mobile", slotIndex = 1, title = "Empty", hasImage = false, imageUrl = ""),
+            BannerEntity(id = "b_hw", section = "hw", slotIndex = 0, title = "HW0", hasImage = true, imageUrl = "/api/banners/hw0/image")
+        )
+        val uiState = BazmoUiState(
+            db = BazmoDbState(banners = banners)
+        )
+        val mobBanners = uiState.bannersForSection("mobile")
+        assertEquals(listOf("b0", "b2"), mobBanners.map { it.id })
+        val hwBanners = uiState.bannersForSection("hw")
+        assertEquals(listOf("b_hw"), hwBanners.map { it.id })
+        assertTrue(uiState.bannersForSection("acc").isEmpty())
+    }
+
+    @Test
+    fun `zwnj normalization matches role and province strings reliably`() {
+        assertEquals(
+            BazmoLocations.normalizeZwnj("نرم\u200cافزارکار"),
+            BazmoLocations.normalizeZwnj("نرم افزارکار")
+        )
+        assertEquals(
+            BazmoLocations.normalizeZwnj("قطعه\u200cفروش"),
+            BazmoLocations.normalizeZwnj("قطعه فروش")
         )
     }
 }
